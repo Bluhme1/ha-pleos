@@ -26,7 +26,7 @@ All ten common Vehicle Data API endpoints are queried. Fields appear when the AP
 | --- | --- | --- |
 | [Battery charging](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-battery-charging-status) | `batteries` | Plug connection, charging state, charge percentage, capacity, charge targets and remaining charge time |
 | [Powertrain status](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-powertrain-status) | `powertrains` | Fuel level, battery percentage and remaining range |
-| [Location](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-location-info) | `locations` | Coordinates, altitude, heading and speed; GPS tracker for valid WGS84 coordinates |
+| [Location](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-location-info) | `locations` | Coordinates, coordinate system, altitude, heading and speed; GPS tracker for valid WGS84 coordinates |
 | [Driving status](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-operation-status) | `driving` | Ignition, power states, sleep mode, odometer and parking position |
 | [Vehicle status](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-status) | `status` | Doors, bonnet, boot, sunroof, tyres, warnings, climate, defrost, steering-wheel heat, seats and outside temperature |
 | [Freezer status](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-freezer-status) | `freezer` | Operation state and temperature |
@@ -35,11 +35,11 @@ All ten common Vehicle Data API endpoints are queried. Fields appear when the AP
 | [Driving trips](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-operation-data) | `driving/data` | Ignition, mileage, acceleration, yaw, ISLA settings, seat belts, steering and gear samples |
 | [Vehicle status trips](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-data) | `status/data` | Door, lamp, tyre-pressure, low-fuel-warning and outside-temperature samples |
 
-Each endpoint has an **API diagnostic sensor** showing `available`, `no_data`, `error` or `disabled`. Its `data` attribute contains the complete returned vehicle payload, including arrays and fields without a dedicated sensor; response metadata is under `api_metadata`. Vehicle information includes VIN, nickname, model code, model name and powertrain type.
+Each endpoint has an **API diagnostic sensor** showing `available`, `no_data`, `error` or `disabled`. Permission and unregistered-vehicle responses show `error`, while `4045` means `no_data`. Its `data` attribute contains the complete returned vehicle payload, including arrays and fields without a dedicated sensor; response metadata is under `api_metadata`. Vehicle information includes VIN, nickname, model code, model name and powertrain type.
 
-Trip queries cover **yesterday and today in UTC**. Full returned trips remain in the diagnostic sensor's `data` attribute. Individual trip sensors show the latest trip's final sample when valid, with trip start, duration and sample index. Invalid final samples are omitted rather than replaced by older readings. Pleos does not document individual sample timestamps, so none are invented. Trip readings are historical and do not use the current-status freshness cutoff.
+Trip queries cover **yesterday and today in UTC**. Full returned trips remain in the diagnostic sensor's `data` attribute. Individual trip sensors show the latest trip's final sample when valid, with trip start, duration and sample index. Invalid final samples are omitted rather than replaced by older readings. Pleos does not document individual sample timestamps, so none are invented. Trip readings are historical and are labelled separately from current-status snapshots.
 
-Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle timestamp is supplied. The location option disables both the location request and GPS tracking.
+Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle timestamp is supplied. Valid last-reported values, including location, stay visible while the car is parked. Their `reported_at`, `data_age_minutes` and `data_stale` attributes show how old they are; they do not imply the car just uploaded new data. The location option disables both the location request and GPS tracking.
 
 Entities use descriptive names such as **AC charge limit**, **Cabin fan speed** and **Front left seat heating**. Trip readings include **(last trip)** in their names. Updating display names preserves existing entity IDs and any names you have customised.
 
@@ -75,8 +75,9 @@ Pleos invalidates old access tokens when a key expires, is revoked or is reissue
 
 ## Limitations and privacy
 
-- Default polling is **15 minutes**; snapshot readings older than **60 minutes** become unavailable. Both settings are configurable, and freshness is checked at each poll.
+- Default polling is **15 minutes**. After **60 minutes**, snapshot readings are marked `data_stale: true` but remain available. Both settings are configurable; age is updated at each poll. Missing or invalid readings and failed account requests can still make entities unavailable. Automations that require recent information should check `data_stale`.
 - Availability varies with vehicle, powertrain, model year, region and connected-service settings. Null or documented invalid values do not become vehicle readings. `no_data` is an API result, not a guarantee of future availability. [Pleos FAQ](https://document.pleos.ai/en/api-reference/vehicle-data-api/faq).
+- Pleos says trip data is available only **24 hours after consent**, and also depends on connected services, data-collection consent and ePrivacy settings. A `4045` response means no data was returned. [Pleos FAQ](https://document.pleos.ai/en/api-reference/vehicle-data-api/faq).
 - This is a read-only cloud integration. It does not implement remote vehicle commands, camera access, the in-car SDK, Fleet API or business-user authentication/consent flows. Status snapshots and returned trip samples are not live telemetry.
-- A failing optional endpoint does not hide other endpoint data. Network errors and rate limits retry automatically; `Retry-After` is respected. Responses above **16 MiB** are rejected.
+- A failing optional endpoint, including a timeout, does not hide other endpoint data. Rate limits stop remaining requests and keep readings already fetched in that poll; affected readings may be unavailable until recovery. Account-level failures are reported by the Connection sensor. Requests retry on later polls and respect `Retry-After`. Responses above **16 MiB** are rejected.
 - Keys live in Home Assistant's private configuration; access tokens stay in memory. Credentials and VINs are not logged. Raw payloads and VIN attributes are excluded from recorder history, but remain accessible in current entity attributes. Protect configuration files and backups.

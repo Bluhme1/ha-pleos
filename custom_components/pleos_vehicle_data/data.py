@@ -36,6 +36,7 @@ NAMES = {"batteries_charge_stateofcharge": "Battery level", "batteries_charge_ch
          "locations_location_latitude": "Latitude", "locations_location_longitude": "Longitude",
          "locations_location_altitude": "Altitude", "locations_location_heading": "Heading",
          "locations_location_speed": "Speed",
+         "locations_location_type": "Coordinate system",
          "status_tire_row1_left": "Front left tyre pressure", "status_tire_row1_right": "Front right tyre pressure",
          "status_tire_row2_left": "Rear left tyre pressure", "status_tire_row2_right": "Rear right tyre pressure",
          **{f"status_doors_row{row}_{side}": f"{position} {side} door"
@@ -82,6 +83,13 @@ def reported_age(timestamp):
         return None
 
 
+def finite_number(value):
+    try:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def readings(endpoint, data, vehicle_type):
     """Keep unknown fields as plain sensors; apply only documented semantics."""
     result = {}
@@ -91,10 +99,10 @@ def readings(endpoint, data, vehicle_type):
     def walk(value, path=(), unit=None):
         if isinstance(value, dict):
             local_unit = value.get("unit", unit)
-            if local_unit == "invalid":
+            if local_unit == "invalid" or (local_unit is not None and not isinstance(local_unit, str)):
                 return
             for key, child in value.items():
-                if key not in ("unit", "type", "timestamp"):
+                if key not in ("unit", "type", "timestamp") or (endpoint == "locations" and path == ("location",) and key == "type"):
                     walk(child, path if key == "value" else (*path, key), local_unit)
             return
         if isinstance(value, list):
@@ -104,11 +112,15 @@ def readings(endpoint, data, vehicle_type):
                 return
             for index, child in enumerate(value):
                 part = child.get("type") if isinstance(child, dict) else None
+                if part == "invalid" or (part is not None and not isinstance(part, str)):
+                    continue
                 walk(child, (*path, part or f"row{index + 1}"), unit)
             return
         if value is None or value == "invalid" or not path:
             return
         if not isinstance(value, (str, int, float, bool)):
+            return
+        if isinstance(value, str) and len(value) > 255:
             return
         if endpoint == "powertrains" and path == ("engine", "fuelLevel") and vehicle_type in ("EV", "FV"):
             return
@@ -116,11 +128,11 @@ def readings(endpoint, data, vehicle_type):
         domain = "sensor"
         numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
         if numeric:
-            if not math.isfinite(value):
+            if not finite_number(value):
                 return
             opts["state_class"] = "measurement"
         if endpoint == "status" and path[0] == "tire":
-            if not numeric or not 0 <= value < 255 or unit not in ("psi", "kpa", "bar"):
+            if not numeric or not 0 <= value <= 254 or unit not in ("psi", "kpa", "bar"):
                 return
             value = value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
             opts["device_class"] = "pressure"
@@ -139,15 +151,25 @@ def readings(endpoint, data, vehicle_type):
                 return
             opts.update(unit_of_measurement="min", device_class="duration")
         if endpoint == "powertrains" and path[0] == "distanceToEmpties":
+            if isinstance(value, bool):
+                return
             try:
                 value = float(value)
             except (ValueError, TypeError):
                 return
-            if not math.isfinite(value) or not 1 <= value <= 4095 or unit not in UNITS:
+            if not math.isfinite(value) or not 1 <= value <= 4095 or unit not in ("feet", "km", "meter", "miles"):
                 return
             opts.update(unit_of_measurement=UNITS[unit], device_class="distance", state_class="measurement")
-        if path == ("odometer",) and numeric and unit in UNITS:
+        if endpoint == "driving" and path == ("odometer",):
+            if not numeric or not 0 <= value <= 16777214 or unit not in ("km", "mile", "meter", "feet"):
+                return
             opts.update(device_class="distance", state_class="total_increasing")
+        if endpoint == "status" and path in (("climateControl", "temperature"), ("outsideTemperature",)):
+            if not numeric or not -100 <= value <= 100 or unit not in ("C", "F"):
+                return
+        if endpoint == "status" and path == ("climateControl", "speed"):
+            if not numeric or not isinstance(value, int) or not -1 <= value <= 8:
+                return
         if endpoint == "freezer" and path == ("freezer", "temperature"):
             if not numeric or not -40 <= value <= 62.3:
                 return
@@ -159,11 +181,19 @@ def readings(endpoint, data, vehicle_type):
             if field in limits:
                 if not numeric or not limits[field][0] <= value <= limits[field][1]:
                     return
-                if field in ("latitude", "longitude", "heading"):
+                if field == "type":
+                    if not isinstance(value, int):
+                        return
+                    systems = ["WGS84", "Bessel", "CoordShift"]
+                    value = systems[value]
+                    opts = {"device_class": "enum", "options": systems}
+                elif field in ("latitude", "longitude", "heading"):
                     opts["unit_of_measurement"] = "°"
                 elif field == "altitude":
                     opts.update(unit_of_measurement="m", device_class="distance")
-                elif field == "speed" and unit in UNITS:
+                elif field == "speed":
+                    if unit not in ("kph", "mph", "mps"):
+                        return
                     opts["device_class"] = "speed"
         if path == ("charge", "plugin"):
             if value not in ("connected", "disconnected"):
@@ -190,10 +220,10 @@ def location(data):
     if not isinstance(data, dict) or reported_age(data.get("timestamp")) is None:
         return None
     point = data.get("location")
-    if not isinstance(point, dict) or isinstance(point.get("type"), bool) or point.get("type") != 0:
+    if not isinstance(point, dict) or type(point.get("type")) is not int or point.get("type") != 0:
         return None
     lat, lon = point.get("latitude"), point.get("longitude")
-    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lat, lon)):
+    if not all(finite_number(v) for v in (lat, lon)):
         return None
     return point if -90 <= lat <= 90 and -180 <= lon <= 180 else None
 
@@ -252,7 +282,7 @@ def trip_readings(endpoint, data):
                                 "device_class": "timestamp", "domain": "sensor", "historical": True},
     }
     length = trip.get("tripLength")
-    if isinstance(length, (int, float)) and not isinstance(length, bool) and math.isfinite(length) and length >= 0:
+    if finite_number(length) and length >= 0:
         result[prefix + "_trip_duration"] = {
             "name": label((ENDPOINT_NAMES[endpoint], "duration")), "value": length / 1000,
             "unit_of_measurement": "s", "device_class": "duration", "domain": "sensor", "historical": True,
@@ -273,11 +303,11 @@ def trip_readings(endpoint, data):
                    "domain": "sensor", "historical": True,
                    "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
         if spec is None:
-            if not isinstance(value, str):
+            if not isinstance(value, str) or len(value) > 255:
                 continue
         else:
             low, high, unit, device_class = spec
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+            if not finite_number(value) or not low <= value <= high:
                 continue
             if field == "location.speed":
                 units = samples("location.speedUnit")

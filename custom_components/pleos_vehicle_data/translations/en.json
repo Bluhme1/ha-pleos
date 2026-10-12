@@ -53,10 +53,10 @@
     "step": {
       "init": {
         "title": "Vehicle data options",
-        "description": "More frequent polling does not make the car upload sooner. Readings older than the maximum age become unavailable; source reporting times stay visible. Options reload this integration automatically.",
+        "description": "More frequent polling does not make the car upload sooner. Valid last-reported values stay visible while the car is parked. The stale-data threshold marks older readings with data_stale; it does not make them unavailable. Options reload this integration automatically.",
         "data": {
           "poll_minutes": "Polling interval",
-          "stale_minutes": "Maximum vehicle data age",
+          "stale_minutes": "Stale-data threshold",
           "location": "Enable location data and GPS tracking"
         },
         "data_description": {

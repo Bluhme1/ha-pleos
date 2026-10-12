@@ -49,6 +49,10 @@ class PleosCoordinator(DataUpdateCoordinator):
                     if endpoint == "locations" and not self.options["location"]:
                         source["value"] = "disabled"
                         continue
+                    if result["status"] == "rate_limited":
+                        source["value"] = "error"
+                        source["attributes"] = {"http_status": 429, "error_code": "rate_limited"}
+                        continue
                     path = f"/v1/vehicles/{quote(vehicle['vin'], safe='')}/{endpoint}"
                     query = "?" + "&".join(f"{key}={value}" for key, value in date_range.items()) if endpoint in TRIP_ENDPOINTS else ""
                     if query:
@@ -56,9 +60,9 @@ class PleosCoordinator(DataUpdateCoordinator):
                     try:
                         data = await self.client.get(path + query)
                     except ApiError as error:
-                        if error.status in (0, 429):
-                            raise
-                        source["value"] = "no_data" if error.code in ("4045", "5006", "403", "4101") else "error"
+                        if error.status == 429:
+                            result["status"] = "rate_limited"
+                        source["value"] = "no_data" if error.code == "4045" else "error"
                         source["attributes"].update(http_status=error.status, error_code=error.code)
                         # An unsupported or failing endpoint must not hide other data.
                         continue

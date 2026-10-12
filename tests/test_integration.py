@@ -270,14 +270,25 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         sensor = ReadingSensor(self.coordinator, car_id, "batteries_charge_stateofcharge", spec)
         self.assertTrue(sensor.available)
         self.assertEqual(sensor.native_value, 50)
-        self.coordinator.data["cars"][car_id]["sources"]["batteries"] = stamp(120)
-        self.assertFalse(sensor.available)
+        self.assertFalse(sensor.extra_state_attributes["data_stale"])
+        self.coordinator.data["cars"][car_id]["sources"]["batteries"] = stamp(4320)
+        self.assertTrue(sensor.available)
+        self.assertEqual(sensor.native_value, 50)
+        self.assertTrue(sensor.extra_state_attributes["data_stale"])
+        self.assertGreaterEqual(sensor.extra_state_attributes["data_age_minutes"], 4320)
         diagnostic_spec = self.coordinator.data["cars"][car_id]["readings"]["batteries_reported_at"]
         diagnostic = ReadingSensor(self.coordinator, car_id, "batteries_reported_at", diagnostic_spec)
         self.assertTrue(diagnostic.available)
         self.assertIsNotNone(diagnostic.native_value.tzinfo)
         spec = self.coordinator.data["cars"][car_id]["readings"]["batteries_charge_charging"]
         self.assertFalse(ReadingBinarySensor(self.coordinator, car_id, "batteries_charge_charging", spec).is_on)
+        self.assertTrue(ReadingBinarySensor(self.coordinator, car_id, "batteries_charge_charging", spec).available)
+        self.coordinator.last_update_success = False
+        self.assertFalse(sensor.available)
+        self.coordinator.last_update_success = True
+        self.coordinator.data["cars"][car_id]["sources"]["batteries"] = None
+        self.assertFalse(sensor.available)
+        self.coordinator.data["cars"][car_id]["sources"]["batteries"] = stamp()
         del self.coordinator.data["cars"][car_id]["readings"][sensor.key]
         self.assertFalse(sensor.available)
 
@@ -288,6 +299,10 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["cars"]), 1)
         self.assertTrue(next(iter(result["cars"].values()))["readings"])
         self.client.get = AsyncMock(side_effect=ApiError(0, "connection_failed"))
+        result = await self.coordinator._async_update_data()
+        car = next(iter(result["cars"].values()))
+        self.assertTrue(all(car["readings"][key]["value"] == "error" for key in car["readings"] if key.endswith("_api")))
+        self.client.vehicles.side_effect = ApiError(0, "connection_failed")
         with self.assertRaises(UpdateFailed):
             await self.coordinator._async_update_data()
 
@@ -316,7 +331,8 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tracker.available)
         self.assertEqual((tracker.latitude, tracker.longitude), (0, 0))
         self.coordinator.data["cars"][car_id]["sources"]["locations"] = stamp(120)
-        self.assertFalse(tracker.available)
+        self.assertTrue(tracker.available)
+        self.assertTrue(tracker.extra_state_attributes["data_stale"])
         self.coordinator.options["location"] = False
         self.client.get = AsyncMock(return_value=None)
         result = await self.coordinator._async_update_data()
@@ -397,7 +413,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         result = await self.coordinator._async_update_data()
         car = next(iter(result["cars"].values()))
         self.assertEqual(car["readings"]["batteries_charge_stateofcharge"]["value"], 50)
-        self.assertEqual(car["readings"]["locations_api"]["value"], "no_data")
+        self.assertEqual(car["readings"]["locations_api"]["value"], "error")
         self.assertEqual(car["readings"]["locations_api"]["attributes"]["http_status"], 403)
 
     async def test_nonfinite_json_is_rejected(self):

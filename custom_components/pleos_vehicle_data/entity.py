@@ -62,7 +62,8 @@ class VehicleEntity(CoordinatorEntity):
         age = reported_age(self.car["sources"].get(self.spec["source"]))
         if self.spec.get("entity_category") == "diagnostic" or self.spec.get("historical"):
             return present
-        return present and age is not None and age <= self.coordinator.options["stale_minutes"] * 60
+        # Parked cars can return the same valid snapshot for days.
+        return present and age is not None
 
     @property
     def extra_state_attributes(self):
@@ -71,4 +72,8 @@ class VehicleEntity(CoordinatorEntity):
         attrs = {"source": self.spec["source"]}
         if not self.spec.get("historical"):
             attrs["reported_at"] = self.car["sources"].get(self.spec["source"])
+            age = reported_age(attrs["reported_at"])
+            if age is not None:
+                attrs["data_age_minutes"] = round(age / 60, 1)
+                attrs["data_stale"] = age > self.coordinator.options["stale_minutes"] * 60
         return attrs | (self.reading.get("attributes", {}) if self.reading else {})
