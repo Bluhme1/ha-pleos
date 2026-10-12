@@ -96,6 +96,10 @@ class PleosClient:
             try:
                 return await self._request(path)
             except ApiError as error:
+                # The live API also returns 403 for expired bearer tokens.
+                if attempt == 0 and (error.status == 403 or error.code == "403"):
+                    self.token = None
+                    continue
                 if error.status == 401 or error.code in TOKEN_ERRORS:
                     self.token = None
                     if attempt == 0:

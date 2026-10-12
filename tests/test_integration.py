@@ -153,6 +153,49 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client._request.await_count, 4)
         self.assertEqual(self.client.token, "new")
 
+    async def test_expired_token_403_refreshes_and_reuses_new_token(self):
+        self.client.token = "expired-fixture-token"
+        def response(status, payload):
+            result = MagicMock()
+            result.status = status
+            async def chunks(size):
+                yield json.dumps(payload).encode()
+            result.content.iter_chunked = chunks
+            context = MagicMock()
+            context.__aenter__.return_value = result
+            return context
+        self.client.session.request.side_effect = [
+            response(403, {"error": {"code": 403}}),
+            response(200, {"data": {"accessToken": "renewed-fixture-token"}}),
+            response(200, {"data": {"vehicles": []}}),
+            response(200, {"data": {"vehicles": []}}),
+        ]
+        self.assertEqual(await self.client.vehicles(), [])
+        self.assertEqual(await self.client.vehicles(), [])
+        self.assertEqual(self.client.token, "renewed-fixture-token")
+        requests = self.client.session.request.call_args_list
+        self.assertEqual([call.args[0] for call in requests], ["GET", "POST", "GET", "GET"])
+        self.assertEqual(requests[0].kwargs["headers"]["Authorization"], "Bearer expired-fixture-token")
+        self.assertEqual(requests[2].kwargs["headers"]["Authorization"], "Bearer renewed-fixture-token")
+
+    async def test_persistent_403_is_permission_error_and_keeps_fresh_token(self):
+        self.client.token = "old"
+        self.client._request = AsyncMock(side_effect=[ApiError(403, "403"), {"accessToken": "fresh"}, ApiError(403, "403"), {"vehicles": []}])
+        with self.assertRaises(ApiError) as caught:
+            await self.client.get("/v1/vehicles/SYNTHETIC-CAR-001/locations")
+        self.assertEqual(caught.exception.status, 403)
+        self.assertEqual(self.client._request.await_count, 3)
+        self.assertEqual(self.client.token, "fresh")
+        self.assertEqual(await self.client.vehicles(), [])
+        self.assertEqual(self.client._request.await_count, 4)
+
+    async def test_expired_key_after_403_requires_reauth(self):
+        self.client.token = "expired"
+        self.client._request = AsyncMock(side_effect=[ApiError(403, "403"), ApiError(404, "40404")])
+        with self.assertRaises(AuthError):
+            await self.client.vehicles()
+        self.assertEqual(self.client._request.await_count, 2)
+
     async def test_invalid_key_requires_reauth(self):
         self.client._request = AsyncMock(side_effect=ApiError(404, "40404"))
         with self.assertRaises(AuthError):
