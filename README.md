@@ -41,6 +41,8 @@ Trip queries cover **yesterday and today in UTC**. Full returned trips remain in
 
 Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle timestamp is supplied. The location option disables both the location request and GPS tracking.
 
+Entities use descriptive names such as **AC charge limit**, **Cabin fan speed** and **Front left seat heating**. Trip readings include **(last trip)** in their names. Updating display names preserves existing entity IDs and any names you have customised.
+
 ## Install with HACS
 
 1. [Install and configure HACS](https://www.hacs.dev/docs/use/download/download/) if required.

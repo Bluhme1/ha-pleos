@@ -19,7 +19,7 @@ from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySens
 from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow, PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN, ENDPOINTS
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
-from custom_components.pleos_vehicle_data.data import location, readings, trip_readings, vehicle_id
+from custom_components.pleos_vehicle_data.data import TRIP_FIELDS, TRIP_NAMES, location, readings, trip_readings, vehicle_id
 from custom_components.pleos_vehicle_data.device_tracker import VehicleTracker
 from custom_components.pleos_vehicle_data.entity import discover
 from custom_components.pleos_vehicle_data.sensor import ConnectionSensor, ReadingSensor
@@ -82,6 +82,17 @@ class DataTests(unittest.TestCase):
         self.assertEqual(len(values), 5)
         self.assertEqual(values["locations_location_speed"]["device_class"], "speed")
 
+    def test_readable_labels_preserve_data_keys(self):
+        values = readings("status", {"doors": [{"left": "locked"}],
+                                    "seats": [{"right": {"heat": "off"}}],
+                                    "climateControl": {"speed": 2, "temperature": {"value": 20, "unit": "C"}}}, "EV")
+        expected = {"status_doors_row1_left": "Front left door",
+                    "status_seats_row1_right_heat": "Front right seat heating",
+                    "status_climatecontrol_speed": "Cabin fan speed",
+                    "status_climatecontrol_temperature": "Cabin target temperature"}
+        self.assertEqual({key: value["name"] for key, value in values.items()}, expected)
+        self.assertEqual(set(TRIP_NAMES), {field for fields in TRIP_FIELDS.values() for field in fields})
+
     def test_trip_units_and_latest_trip_selection(self):
         old = {"triggerStartTime": stamp(120), "tripLength": 1000, "engine": {"rpm": [1]}}
         recent = {"triggerStartTime": stamp(60), "tripLength": 2500,
@@ -90,6 +101,7 @@ class DataTests(unittest.TestCase):
         values, start = trip_readings("powertrains/data", {"trips": [recent, old]})
         self.assertEqual(start, recent["triggerStartTime"])
         self.assertEqual(values["powertrains_data_engine_rpm"]["value"], 200)
+        self.assertEqual(values["powertrains_data_engine_rpm"]["name"], "Engine speed (last trip)")
         self.assertEqual(values["powertrains_data_batteries_hv_voltage"]["unit_of_measurement"], "V")
         self.assertEqual(values["powertrains_data_trip_duration"]["value"], 2.5)
 

@@ -12,13 +12,55 @@ UNITS = {"C": "°C", "F": "°F", "km": "km", "mile": "mi", "miles": "mi",
          "kph": "km/h", "mph": "mph", "mps": "m/s"}
 
 
-NAMES = {"batteries_charge_stateofcharge": "Battery", "batteries_charge_charging": "Charging",
+NAMES = {"batteries_charge_stateofcharge": "Battery level", "batteries_charge_charging": "Charging",
          "batteries_charge_plugin": "Plugged in", "batteries_charge_remaintime": "Charge time remaining",
-         "batteries_charge_status": "Charging status", "powertrains_engine_fuellevel": "Fuel level",
+         "batteries_charge_status": "Charging status", "batteries_charge_batterycapacity": "Battery capacity",
+         "batteries_charge_targetstateofcharge_standard": "AC charge limit",
+         "batteries_charge_targetstateofcharge_quick": "DC charge limit",
+         "powertrains_engine_fuellevel": "Fuel level", "powertrains_batteries_main_remainratio": "Traction battery level",
          "powertrains_distancetoempties_ev": "EV range", "driving_odometer": "Odometer",
-         "status_hood": "Bonnet", "status_trunk": "Boot",
+         "powertrains_distancetoempties_ice": "Fuel range", "powertrains_distancetoempties_hev": "Hybrid range",
+         "powertrains_distancetoempties_phev": "Plug-in hybrid range", "powertrains_distancetoempties_fcev": "Hydrogen range",
+         "driving_ignition_status": "Ignition", "driving_sleepmode": "Sleep mode",
+         "driving_ignition_ignitiondetails_ign1_status": "Ignition power",
+         "driving_ignition_ignitiondetails_ign3_status": "High-voltage system power",
+         "driving_ignition_ignitiondetails_acc_status": "Accessory power",
+         "driving_transmission_parkingposition": "In park",
+         "status_hood": "Bonnet", "status_trunk": "Boot", "status_sunroof": "Sunroof",
+         "status_warnings": "Warnings", "status_climatecontrol_mode": "Climate mode",
+         "status_climatecontrol_status": "Climate control", "status_climatecontrol_speed": "Cabin fan speed",
+         "status_climatecontrol_temperature": "Cabin target temperature",
+         "status_outsidetemperature": "Outside temperature", "status_windshield_defrost": "Windscreen defrost",
+         "status_steeringwheelheat": "Steering wheel heating",
+         "freezer_freezer_status": "Freezer", "freezer_freezer_temperature": "Freezer temperature",
+         "locations_location_latitude": "Latitude", "locations_location_longitude": "Longitude",
+         "locations_location_altitude": "Altitude", "locations_location_heading": "Heading",
+         "locations_location_speed": "Speed",
          "status_tire_row1_left": "Front left tyre pressure", "status_tire_row1_right": "Front right tyre pressure",
-         "status_tire_row2_left": "Rear left tyre pressure", "status_tire_row2_right": "Rear right tyre pressure"}
+         "status_tire_row2_left": "Rear left tyre pressure", "status_tire_row2_right": "Rear right tyre pressure",
+         **{f"status_doors_row{row}_{side}": f"{position} {side} door"
+            for row, position in ((1, "Front"), (2, "Rear")) for side in ("left", "right")},
+         **{f"status_seats_row{row}_{side}_{field}": f"{position} {side} seat {name}"
+            for row, position in ((1, "Front"), (2, "Rear")) for side in ("left", "right")
+            for field, name in (("heat", "heating"), ("ventilation", "ventilation"))}}
+
+TRIP_NAMES = {
+    "batteries.hv.voltage": "Traction battery voltage", "engine.oilTemperature": "Engine oil temperature",
+    "engine.rpm": "Engine speed", "location.speed": "Speed", "location.speedUnit": "Speed unit",
+    "ignition.status": "Ignition", "odometer.value": "Odometer", "acceleration.longitudinal": "Forward acceleration",
+    "angularVelocity.yaw": "Turning rate", "isla.optionUsm": "Speed limit assist setting",
+    "isla.optionUsm2": "Speed limit assist secondary setting", "seatbelt.assistance": "Passenger seat belt",
+    "seatbelt.driver": "Driver seat belt", "steeringWheel.angle": "Steering wheel angle",
+    "steeringWheel.rotationSpeed": "Steering wheel turning speed", "transmission.gear": "Gear",
+    "lamp.setting": "Exterior light setting", "tire.pressureUnit": "Tyre pressure unit",
+    "warnings.lowFuelLevel": "Low fuel warning", "outsideTemperature.value": "Outside temperature",
+    "doors.openAssistance": "Front passenger door", "doors.openDriver": "Driver door",
+    "doors.openRearLeft": "Rear left door", "doors.openRearRight": "Rear right door",
+    **{f"{group}.{field}{part}": f"{name} {side} {suffix}"
+       for part, name, side in (("FrontLeft", "Front", "left"), ("FrontRight", "Front", "right"),
+                                ("RearLeft", "Rear", "left"), ("RearRight", "Rear", "right"))
+       for group, field, suffix in (("wheel", "speed", "wheel speed"), ("tire", "pressure", "tyre pressure"))},
+}
 
 
 def identifier(text):
@@ -26,7 +68,7 @@ def identifier(text):
 
 
 def label(path):
-    return " ".join(re.sub(r"([a-z])([A-Z])", r"\1 \2", str(part)) for part in path).capitalize()
+    return " ".join(re.sub(r"([a-z])([A-Z])", r"\1 \2", str(part)).replace("_", " ") for part in path).capitalize()
 
 
 def reported_age(timestamp):
@@ -227,7 +269,7 @@ def trip_readings(endpoint, data):
         if not values or values[-1] is None or values[-1] == "invalid":
             continue
         value, index = values[-1], len(values) - 1
-        reading = {"name": label((ENDPOINT_NAMES[endpoint], *field.split("."))), "value": value,
+        reading = {"name": TRIP_NAMES[field] + " (last trip)", "value": value,
                    "domain": "sensor", "historical": True,
                    "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
         if spec is None:

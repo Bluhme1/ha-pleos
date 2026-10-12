@@ -9,7 +9,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import ApiError, AuthError
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
-from .data import identifier, label, location, readings, reported_age, trip_readings, vehicle_id
+from .data import identifier, location, readings, reported_age, trip_readings, vehicle_id
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +87,8 @@ class PleosCoordinator(DataUpdateCoordinator):
                             ("data_age", {"value": round(age / 60, 1), "unit_of_measurement": "min", "device_class": "duration", "state_class": "measurement"}),
                         ):
                             car["readings"][prefix + "_" + suffix] = reading | {
-                                "name": label((endpoint, suffix)), "domain": "sensor", "source": endpoint,
+                                "name": ENDPOINT_NAMES[endpoint] + (" last reported" if suffix == "reported_at" else " data age"),
+                                "domain": "sensor", "source": endpoint,
                                 "entity_category": "diagnostic",
                             }
             return result
