@@ -1,0 +1,258 @@
+"""Normalize documented vehicle fields without inventing missing readings."""
+
+import hashlib
+import math
+import re
+from datetime import datetime, timezone
+
+from .const import ENDPOINT_NAMES
+
+UNITS = {"C": "°C", "F": "°F", "km": "km", "mile": "mi", "miles": "mi",
+         "meter": "m", "feet": "ft", "psi": "psi", "kpa": "kPa", "bar": "bar",
+         "kph": "km/h", "mph": "mph", "mps": "m/s"}
+
+
+NAMES = {"batteries_charge_stateofcharge": "Battery", "batteries_charge_charging": "Charging",
+         "batteries_charge_plugin": "Plugged in", "batteries_charge_remaintime": "Charge time remaining",
+         "batteries_charge_status": "Charging status", "powertrains_engine_fuellevel": "Fuel level",
+         "powertrains_distancetoempties_ev": "EV range", "driving_odometer": "Odometer",
+         "status_hood": "Bonnet", "status_trunk": "Boot",
+         "status_tire_row1_left": "Front left tyre pressure", "status_tire_row1_right": "Front right tyre pressure",
+         "status_tire_row2_left": "Rear left tyre pressure", "status_tire_row2_right": "Rear right tyre pressure"}
+
+
+def identifier(text):
+    return re.sub(r"[^a-z0-9]+", "_", str(text).lower()).strip("_")
+
+
+def label(path):
+    return " ".join(re.sub(r"([a-z])([A-Z])", r"\1 \2", str(part)) for part in path).capitalize()
+
+
+def reported_age(timestamp):
+    try:
+        stamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            return None
+        age = (datetime.now(timezone.utc) - stamp).total_seconds()
+        return max(0, age) if age >= -300 else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def readings(endpoint, data, vehicle_type):
+    """Keep unknown fields as plain sensors; apply only documented semantics."""
+    result = {}
+    if not isinstance(data, dict):
+        return result
+
+    def walk(value, path=(), unit=None):
+        if isinstance(value, dict):
+            local_unit = value.get("unit", unit)
+            if local_unit == "invalid":
+                return
+            for key, child in value.items():
+                if key not in ("unit", "type", "timestamp"):
+                    walk(child, path if key == "value" else (*path, key), local_unit)
+            return
+        if isinstance(value, list):
+            if path == ("warnings",):
+                if all(isinstance(item, str) for item in value):
+                    walk(", ".join(value)[:255] or "None", path)
+                return
+            for index, child in enumerate(value):
+                part = child.get("type") if isinstance(child, dict) else None
+                walk(child, (*path, part or f"row{index + 1}"), unit)
+            return
+        if value is None or value == "invalid" or not path:
+            return
+        if not isinstance(value, (str, int, float, bool)):
+            return
+        if endpoint == "powertrains" and path == ("engine", "fuelLevel") and vehicle_type in ("EV", "FV"):
+            return
+        opts = {}
+        domain = "sensor"
+        numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if numeric:
+            if not math.isfinite(value):
+                return
+            opts["state_class"] = "measurement"
+        if endpoint == "status" and path[0] == "tire":
+            if not numeric or not 0 <= value < 255 or unit not in ("psi", "kpa", "bar"):
+                return
+            value = value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
+            opts["device_class"] = "pressure"
+        if unit in UNITS and numeric:
+            opts["unit_of_measurement"] = UNITS[unit]
+            if unit in ("C", "F"):
+                opts["device_class"] = "temperature"
+        if path[-1] in ("stateOfCharge", "remainRatio", "fuelLevel") or path[:2] == ("charge", "targetStateOfCharge"):
+            if not numeric or not 0 <= value <= 100:
+                return
+            opts["unit_of_measurement"] = "%"
+            if path[-1] != "fuelLevel":
+                opts["device_class"] = "battery"
+        if path == ("charge", "remainTime"):
+            if not numeric or not 0 <= value <= 65535:
+                return
+            opts.update(unit_of_measurement="min", device_class="duration")
+        if endpoint == "powertrains" and path[0] == "distanceToEmpties":
+            try:
+                value = float(value)
+            except (ValueError, TypeError):
+                return
+            if not math.isfinite(value) or not 1 <= value <= 4095 or unit not in UNITS:
+                return
+            opts.update(unit_of_measurement=UNITS[unit], device_class="distance", state_class="measurement")
+        if path == ("odometer",) and numeric and unit in UNITS:
+            opts.update(device_class="distance", state_class="total_increasing")
+        if endpoint == "freezer" and path == ("freezer", "temperature"):
+            if not numeric or not -40 <= value <= 62.3:
+                return
+            opts.update(unit_of_measurement="°C", device_class="temperature")
+        if endpoint == "locations":
+            limits = {"latitude": (-90, 90), "longitude": (-180, 180), "altitude": (-100, 10000),
+                      "heading": (0, 359), "speed": (0, 1000), "type": (0, 2)}
+            field = path[-1]
+            if field in limits:
+                if not numeric or not limits[field][0] <= value <= limits[field][1]:
+                    return
+                if field in ("latitude", "longitude", "heading"):
+                    opts["unit_of_measurement"] = "°"
+                elif field == "altitude":
+                    opts.update(unit_of_measurement="m", device_class="distance")
+                elif field == "speed" and unit in UNITS:
+                    opts["device_class"] = "speed"
+        if path == ("charge", "plugin"):
+            if value not in ("connected", "disconnected"):
+                return
+            value = value == "connected"
+            opts["device_class"] = "plug"
+        if isinstance(value, bool):
+            domain, value = "binary_sensor", "ON" if value else "OFF"
+            if path == ("charge", "charging"):
+                opts["device_class"] = "battery_charging"
+            opts.pop("state_class", None)
+        key = identifier(endpoint + "_" + "_".join(map(str, path)))
+        result[key] = {"value": value, "name": NAMES.get(key, label(path)), "domain": domain, **opts}
+
+    walk(data)
+    return result
+
+
+def vehicle_id(brand, vin):
+    return brand + "_" + hashlib.sha256(vin.encode()).hexdigest()[:16]
+
+
+def location(data):
+    if not isinstance(data, dict) or reported_age(data.get("timestamp")) is None:
+        return None
+    point = data.get("location")
+    if not isinstance(point, dict) or isinstance(point.get("type"), bool) or point.get("type") != 0:
+        return None
+    lat, lon = point.get("latitude"), point.get("longitude")
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (lat, lon)):
+        return None
+    return point if -90 <= lat <= 90 and -180 <= lon <= 180 else None
+
+
+# Paths, ranges and units from the four Pleos trip-data response schemas.
+TRIP_FIELDS = {
+    "powertrains/data": {
+        "batteries.hv.voltage": (0, 6553, "V", "voltage"),
+        "engine.oilTemperature": (0, 150.5, "°C", "temperature"),
+        "engine.rpm": (0, 16383.5, "rpm", None),
+    },
+    "speed": {
+        "location.speed": (0, 254, None, "speed"),
+        "location.speedUnit": None,
+        **{f"wheel.speed{side}": (0, 511.9375, "km/h", "speed")
+           for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
+    },
+    "driving/data": {
+        "ignition.status": None,
+        "odometer.value": (0, 1677721.4, "km", "distance"),
+        "acceleration.longitudinal": (-4.177, 4.177, "g", None),
+        "angularVelocity.yaw": (-40.95, 40.95, "°/s", None),
+        "isla.optionUsm": None,
+        "isla.optionUsm2": None,
+        "seatbelt.assistance": None,
+        "seatbelt.driver": None,
+        "steeringWheel.angle": (-3276.8, 3276.7, "°", None),
+        "steeringWheel.rotationSpeed": (0, 1016, "°/s", None),
+        "transmission.gear": None,
+    },
+    "status/data": {
+        **{f"doors.open{side}": None for side in ("Assistance", "Driver", "RearLeft", "RearRight")},
+        "lamp.setting": None,
+        **{f"tire.pressure{side}": (0, 254, None, "pressure")
+           for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
+        "tire.pressureUnit": None,
+        "warnings.lowFuelLevel": None,
+        "outsideTemperature.value": (-40, 60, "°C", "temperature"),
+    },
+}
+
+
+def trip_readings(endpoint, data):
+    """Expose the latest trip's last samples; the API does not supply sample times."""
+    trips = data.get("trips") if isinstance(data, dict) else None
+    if not isinstance(trips, list):
+        return {}, None
+    valid = [trip for trip in trips if isinstance(trip, dict) and reported_age(trip.get("triggerStartTime")) is not None]
+    if not valid:
+        return {}, None
+    trip = max(valid, key=lambda t: datetime.fromisoformat(t["triggerStartTime"].replace("Z", "+00:00")))
+    start = trip["triggerStartTime"]
+    prefix = identifier(endpoint)
+    result = {
+        prefix + "_trip_start": {"name": label((ENDPOINT_NAMES[endpoint], "start")), "value": start,
+                                "device_class": "timestamp", "domain": "sensor", "historical": True},
+    }
+    length = trip.get("tripLength")
+    if isinstance(length, (int, float)) and not isinstance(length, bool) and math.isfinite(length) and length >= 0:
+        result[prefix + "_trip_duration"] = {
+            "name": label((ENDPOINT_NAMES[endpoint], "duration")), "value": length / 1000,
+            "unit_of_measurement": "s", "device_class": "duration", "domain": "sensor", "historical": True,
+        }
+
+    def samples(path):
+        value = trip
+        for part in path.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        return value if isinstance(value, list) else []
+
+    for field, spec in TRIP_FIELDS[endpoint].items():
+        values = samples(field)
+        if not values or values[-1] is None or values[-1] == "invalid":
+            continue
+        value, index = values[-1], len(values) - 1
+        reading = {"name": label((ENDPOINT_NAMES[endpoint], *field.split("."))), "value": value,
+                   "domain": "sensor", "historical": True,
+                   "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
+        if spec is None:
+            if not isinstance(value, str):
+                continue
+        else:
+            low, high, unit, device_class = spec
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+                continue
+            if field == "location.speed":
+                units = samples("location.speedUnit")
+                unit = UNITS.get(units[index]) if len(units) > index and units[index] in ("kph", "mph") else None
+                if unit is None:
+                    continue
+            elif field.startswith("tire.pressure"):
+                units = samples("tire.pressureUnit")
+                raw_unit = units[index] if len(units) > index else None
+                if raw_unit not in ("psi", "kpa", "bar"):
+                    continue
+                unit = UNITS[raw_unit]
+                reading["value"] = value * 5 if raw_unit == "kpa" else value / 10 if raw_unit == "bar" else value
+            reading["state_class"] = "measurement"
+            if unit:
+                reading["unit_of_measurement"] = unit
+            if device_class:
+                reading["device_class"] = device_class
+        result[prefix + "_" + identifier(field)] = reading
+    return result, start

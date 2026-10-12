@@ -1,0 +1,81 @@
+{
+  "title": "Pleos Vehicle Data",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your vehicles",
+        "description": "Get a **personal** API key from [Pleos Playground]({pleos_url}) \u2192 account menu \u2192 **My Vehicle Data API** \u2192 select manufacturer \u2192 **Get API Key** \u2192 sign into your manufacturer account. [Step-by-step guide]({key_guide_url}).\n\nSelect the same manufacturer below and paste both credentials. Keys must be replaced manually when they expire; check the expiry shown in Pleos. Only data shared by your vehicle will appear.",
+        "data": {
+          "brand": "Manufacturer",
+          "client_id": "Client ID",
+          "client_secret": "Client Secret"
+        },
+        "data_description": {
+          "client_id": "Copy the Client ID from My Vehicle Data API in Pleos Playground.",
+          "client_secret": "Copy the matching Client Secret. Home Assistant saves it in its private configuration."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Replace your {brand} API key",
+        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) \u2192 My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client Secret"
+        },
+        "data_description": {
+          "client_id": "Copy the Client ID from My Vehicle Data API in Pleos Playground.",
+          "client_secret": "Copy the matching Client Secret. Home Assistant saves it in its private configuration."
+        }
+      },
+      "reconfigure": {
+        "title": "Update your {brand} API key",
+        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) \u2192 My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client Secret"
+        },
+        "data_description": {
+          "client_id": "Copy the Client ID from My Vehicle Data API in Pleos Playground.",
+          "client_secret": "Copy the matching Client Secret. Home Assistant saves it in its private configuration."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The API key was rejected. Generate a new personal key and enter both matching fields for this manufacturer.",
+      "cannot_connect": "Could not read your vehicles from Pleos. Check your internet connection and personal API availability, then try again.",
+      "rate_limited": "Pleos is limiting requests. Wait a few minutes before trying again."
+    },
+    "abort": {
+      "already_configured": "This manufacturer is already configured. Use Reconfigure on its existing entry to replace the key."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Vehicle data options",
+        "description": "More frequent polling does not make the car upload sooner. Readings older than the maximum age become unavailable; source reporting times stay visible. Options reload this integration automatically.",
+        "data": {
+          "poll_minutes": "Polling interval",
+          "stale_minutes": "Maximum vehicle data age",
+          "location": "Enable location data and GPS tracking"
+        },
+        "data_description": {
+          "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "connection": {
+        "state": {
+          "connected": "Connected",
+          "no_vehicles": "No vehicles",
+          "key_required": "New API key required",
+          "api_unavailable": "API unavailable",
+          "rate_limited": "Rate limited"
+        }
+      }
+    }
+  }
+}
