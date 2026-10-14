@@ -53,18 +53,32 @@
     "step": {
       "init": {
         "title": "Vehicle data options",
-        "description": "More frequent polling does not make the car upload sooner. Valid last-reported values stay visible while the car is parked. The stale-data threshold marks older readings with data_stale; it does not make them unavailable. Options reload this integration automatically.",
-        "data": {
-          "poll_minutes": "Polling interval",
-          "stale_minutes": "Stale-data threshold",
-          "location": "Enable location data and GPS tracking",
-          "trip_events": "Fire an event for each new trip",
-          "trip_poll_minutes": "Trip data interval"
-        },
-        "data_description": {
-          "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates.",
-          "trip_events": "Fires pleos_vehicle_data_trip once per trip with every sample the API returned. Large trips can be excluded from the recorder.",
-          "trip_poll_minutes": "How often the four trip endpoints are queried. Pleos delivers trip data with a delay, so this can be longer than the polling interval. Trip readings are kept between queries."
+        "description": "Options reload this integration automatically.",
+        "sections": {
+          "polling": {
+            "name": "Vehicle status",
+            "description": "More frequent polling does not make the car upload sooner. Valid last-reported values stay visible while the car is parked.",
+            "data": {
+              "poll_minutes": "Polling interval",
+              "stale_minutes": "Stale-data threshold",
+              "location": "Enable location data and GPS tracking"
+            },
+            "data_description": {
+              "stale_minutes": "Older readings are marked with data_stale; they do not become unavailable.",
+              "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+            }
+          },
+          "trips": {
+            "name": "Trips",
+            "data": {
+              "trip_poll_minutes": "Trip data interval",
+              "trip_events": "Fire an event for each new trip"
+            },
+            "data_description": {
+              "trip_poll_minutes": "How often the four trip endpoints are queried. Pleos delivers trip data with a delay, so this can be longer than the polling interval. Trip readings are kept between queries.",
+              "trip_events": "Fires pleos_vehicle_data_trip once per trip with every sample the API returned. Large trips can be excluded from the recorder."
+            }
+          }
         }
       }
     }
