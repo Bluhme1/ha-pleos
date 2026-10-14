@@ -63,6 +63,7 @@ All settings are in one place: **Settings → Devices & services → Pleos Vehic
 | Vehicle status | **Polling interval** | 15 min | 5–1440 min | How often status data is requested. The car uploads on its own schedule, so polling more often does not make data newer. |
 | Vehicle status | **Stale-data threshold** | 60 min | 5–10080 min | Readings older than this get `data_stale: true`. They stay available. |
 | Vehicle status | **Enable location data and GPS tracking** | On | | Requests the location endpoint and creates the GPS tracker. Off: neither. |
+| Vehicle status | **Correct odometer kilometres labelled as miles** | No cars selected | Per car | Treats a selected car's snapshot odometer value as kilometres when the API labels it miles. Use only for a confirmed unit-label error; see [Units](#units). |
 | Trips | **Trip data interval** | 60 min | 5–1440 min | How often the four trip endpoints are requested. Failed trip requests retry at the next status poll. |
 | Trips | **Fire an event for each new trip** | Off | | Fires `pleos_vehicle_data_trip` with every sample; see [Trip events](#trip-events). The **Trip** event entity works regardless of this option. |
 | Storage | **Archive raw vehicle data** | Off | | Keeps raw responses in compressed files; see [Response archive](#response-archive). |
@@ -123,6 +124,10 @@ Each manufacturer entry creates an **API device** (for example *Kia API*) and on
 ### Units
 
 Status readings use the unit returned by the API. For example, the [odometer response](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-operation-status) can report `km`, `mile`, `meter` or `feet`; these become Home Assistant's `km`, `mi`, `m` or `ft`. Trip odometer samples are documented in kilometres.
+
+Some vehicles return a kilometre odometer value labelled `mile` ([#6](https://github.com/jouwdan/ha-pleos/issues/6)). If **Driving status API → data.odometer** contains `5177.5` with unit `mile`, but the car shows about `3217` miles, select that car under **Configure → Vehicle status → Correct odometer kilometres labelled as miles**. Home Assistant will interpret the value as `5177.5 km` and display about `3217.15 mi` when miles are selected. Raw API diagnostics and archives stay unchanged; the corrected Odometer entity includes `api_unit_of_measurement: mi`.
+
+Leave this option empty for correctly reported odometers. It applies only to the selected cars' snapshot odometers labelled miles; trip data and other units are unaffected. Clear the selection if Pleos fixes the underlying data. Existing history and statistics are not rewritten. The lower corrected reading can be interpreted as a reset by cumulative statistics, so check **Developer tools → Statistics** for affected odometer totals after enabling it.
 
 Home Assistant converts readings for your unit preferences. To display miles, open the odometer entity's settings and set **Unit of measurement** to **mi**. This converts both the number and label: **1,609.344 km = 1,000 mi**. If a reading differs from the car or app, compare its value and unit with `data.odometer` on the **Driving status API** sensor and include both in an issue report.
 

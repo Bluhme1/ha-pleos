@@ -61,12 +61,14 @@
             "data": {
               "poll_minutes": "Polling interval",
               "stale_minutes": "Stale-data threshold",
-              "location": "Enable location data and GPS tracking"
+              "location": "Enable location data and GPS tracking",
+              "odometer_km_vehicles": "Correct odometer kilometres labelled as miles"
             },
             "data_description": {
               "poll_minutes": "How often status data is requested from Pleos. Trip data has its own interval under Trips.",
               "stale_minutes": "Older readings are marked with data_stale; they do not become unavailable.",
-              "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+              "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates.",
+              "odometer_km_vehicles": "Select only cars whose API odometer value is in kilometres but labelled miles. Home Assistant will then convert it to your preferred display unit. Leave empty for correctly reported units. This affects new readings only; existing history and statistics are not repaired. Clear the selection if Pleos fixes the underlying data."
             }
           },
           "trips": {
