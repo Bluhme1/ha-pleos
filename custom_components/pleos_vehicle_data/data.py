@@ -1,6 +1,7 @@
 """Normalize documented vehicle fields without inventing missing readings."""
 
 import hashlib
+import logging
 import math
 import re
 from collections.abc import Callable
@@ -8,6 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .const import ENDPOINT_NAMES
+
+LOGGER = logging.getLogger(__name__)
+# Rejections kept per endpoint as examples on its diagnostic sensor.
+REJECTION_EXAMPLES = 5
 
 UNITS = {"C": "°C", "F": "°F", "km": "km", "mile": "mi", "miles": "mi",
          "meter": "m", "feet": "ft", "psi": "psi", "kpa": "kPa", "bar": "bar",
@@ -132,6 +137,13 @@ class Spec:
             value = self.convert(value, raw_unit)
         return self.options[value] if self.options else value
 
+    def describe(self):
+        """The rule a rejected value broke, for logs and diagnostics."""
+        text = f"expected {self.low} to {self.high}"
+        if self.units is not None:
+            text += " in " + "/".join(self.units)
+        return text + (" as a whole number" if self.integer else "")
+
     def metadata(self):
         if self.options:
             return {"device_class": "enum", "options": list(self.options)}
@@ -181,15 +193,40 @@ def snapshot_spec(endpoint, path):
                  if scope in (None, endpoint) and matches(path)), None)
 
 
-def readings(endpoint, data, vehicle_type):
-    """Keep unknown fields as plain sensors; apply only documented semantics."""
+class Rejections:
+    """Values present in a response but not turned into a reading, with the reason."""
+
+    def __init__(self, endpoint):
+        self.endpoint, self.count, self.examples = endpoint, 0, []
+
+    def add(self, path, value, reason):
+        path = ".".join(map(str, path)) if isinstance(path, tuple) else path
+        self.count += 1
+        if len(self.examples) < REJECTION_EXAMPLES:
+            self.examples.append({"path": path, "value": value if isinstance(value, (str, int, float, bool)) else repr(value)[:100],
+                                  "reason": reason})
+        LOGGER.debug("Pleos %s: ignored %s = %r (%s)", self.endpoint, path, value, reason)
+
+    def attributes(self):
+        return {"rejected_values": self.count, "rejected_examples": self.examples}
+
+
+def readings(endpoint, data, vehicle_type, rejections=None):
+    """Keep unknown fields as plain sensors; apply only documented semantics.
+
+    Values present but not usable are reported to `rejections`; absent values (null)
+    and values the API itself marks "invalid" are not rejections.
+    """
     result = {}
     if not isinstance(data, dict):
         return result
+    reject = rejections.add if rejections is not None else lambda *args: None
 
     def walk(value, path=(), unit=None):
         if isinstance(value, dict):
             local_unit = value.get("unit", unit)
+            if local_unit is not None and local_unit != "invalid" and not isinstance(local_unit, str):
+                reject((*path, "unit"), local_unit, "unit is not text")
             if local_unit == "invalid" or (local_unit is not None and not isinstance(local_unit, str)):
                 return
             for key, child in value.items():
@@ -198,6 +235,8 @@ def readings(endpoint, data, vehicle_type):
             return
         if isinstance(value, list):
             if path == ("warnings",):
+                if not all(isinstance(item, str) for item in value):
+                    reject(path, value, "warnings must all be text")
                 if all(isinstance(item, str) for item in value):
                     walk(", ".join(value)[:255] or "None", path)
                     # The state is cut at 255 characters; the attribute keeps every warning.
@@ -206,6 +245,8 @@ def readings(endpoint, data, vehicle_type):
                 return
             for index, child in enumerate(value):
                 part = child.get("type") if isinstance(child, dict) else None
+                if part is not None and part != "invalid" and not isinstance(part, str):
+                    reject((*path, f"row{index + 1}", "type"), part, "type is not text")
                 if part == "invalid" or (part is not None and not isinstance(part, str)):
                     continue
                 walk(child, (*path, part or f"row{index + 1}"), unit)
@@ -213,18 +254,22 @@ def readings(endpoint, data, vehicle_type):
         if value is None or value == "invalid" or not path:
             return
         if not isinstance(value, (str, int, float, bool)):
+            reject(path, value, "unsupported type")
             return
         if isinstance(value, str) and len(value) > 255:
+            reject(path, value[:100] + "…", "text longer than 255 characters")
             return
         if endpoint == "powertrains" and path == ("engine", "fuelLevel") and vehicle_type in ("EV", "FV"):
             return
         spec = snapshot_spec(endpoint, path)
         if spec:
-            value = spec.check(value, unit)
+            raw, value = value, spec.check(value, unit)
             if value is None:
+                reject(path, raw, spec.describe() + (f", got unit {unit}" if unit else ""))
                 return
         numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
         if numeric and not finite_number(value):
+            reject(path, value, "not a finite number")
             return
         opts = {}
         if numeric:
@@ -238,6 +283,7 @@ def readings(endpoint, data, vehicle_type):
         domain = "sensor"
         if path == ("charge", "plugin"):
             if value not in ("connected", "disconnected"):
+                reject(path, value, "expected connected or disconnected")
                 return
             value = value == "connected"
             opts["device_class"] = "plug"
@@ -330,8 +376,29 @@ def prune_seen(starts, max_age):
     return sorted(start for start in starts if (age := reported_age(start)) is not None and age <= max_age)
 
 
-def trip_readings(endpoint, data):
-    """Expose the latest trip's last samples; the API does not supply sample times."""
+def trip_leaves(trip, path=()):
+    """Every non-dict value of a trip with its dotted path, except the trip's start and length."""
+    for key, value in trip.items():
+        if not path and key in ("triggerStartTime", "tripLength"):
+            continue
+        if isinstance(value, dict):
+            yield from trip_leaves(value, (*path, str(key)))
+        else:
+            yield ".".join((*path, str(key))), value
+
+
+def summary(values):
+    return {"trip_min": min(values), "trip_max": max(values), "trip_mean": round(sum(values) / len(values), 3),
+            "valid_samples": len(values)}
+
+
+def trip_readings(endpoint, data, rejections=None):
+    """Expose the latest trip's last samples; the API does not supply sample times.
+
+    Documented fields use their spec; any other field becomes a plain reading. Present but
+    unusable last samples are reported to `rejections`.
+    """
+    reject = rejections.add if rejections is not None else lambda *args: None
     trips = data.get("trips") if isinstance(data, dict) else None
     if not isinstance(trips, list):
         return {}, None
@@ -376,10 +443,12 @@ def trip_readings(endpoint, data):
                    "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
         if spec is None:
             if not isinstance(value, str) or len(value) > 255:
+                reject(field, value if isinstance(value, (int, float, bool)) else repr(value)[:100], "expected text up to 255 characters")
                 continue
         else:
             last = numeric_sample(field, spec, index)
             if last is None:
+                reject(field, value if isinstance(value, (str, int, float, bool)) else repr(value)[:100], spec.describe())
                 continue
             reading["value"], unit = last
             # Summarise every valid sample of the trip in the last sample's unit.
@@ -395,6 +464,37 @@ def trip_readings(endpoint, data):
             if spec.device_class:
                 reading["device_class"] = spec.device_class
         result[prefix + "_" + identifier(field)] = reading
+
+    # Fields Pleos returns without documentation: the last sample as a plain reading.
+    for field, value in trip_leaves(trip):
+        key = prefix + "_" + identifier(field)
+        if field in TRIP_FIELDS[endpoint] or key in result:
+            continue
+        values = value if isinstance(value, list) else None
+        last = values[-1] if values else value
+        if last is None or last == "invalid" or values == []:
+            continue
+        name = label(tuple(field.split("."))) + " (last trip)"
+        attributes = {"trip_start": start, "trip_length_ms": length}
+        if values is not None:
+            attributes |= {"sample_index": len(values) - 1, "total_samples": len(values)}
+        reading = {"name": name, "domain": "sensor", "historical": True, "attributes": attributes}
+        if isinstance(last, bool):
+            reading.update(domain="binary_sensor", value="ON" if last else "OFF")
+        elif isinstance(last, (int, float)):
+            if not finite_number(last):
+                reject(field, repr(last), "not a finite number")
+                continue
+            reading.update(value=last, state_class="measurement")
+            if values is not None:
+                attributes |= summary([sample for sample in values if finite_number(sample)])
+        elif isinstance(last, str) and len(last) <= 255:
+            reading["value"] = last
+        else:
+            reject(field, last[:100] + "…" if isinstance(last, str) else repr(last)[:100],
+                   "text longer than 255 characters" if isinstance(last, str) else "unsupported type")
+            continue
+        result[key] = reading
 
     if endpoint == "driving/data":
         spec = TRIP_FIELDS[endpoint]["odometer.value"]

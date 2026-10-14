@@ -2,7 +2,7 @@
 
 import unittest
 
-from custom_components.pleos_vehicle_data.data import (new_trips, prune_seen, trip_readings)
+from custom_components.pleos_vehicle_data.data import Rejections, new_trips, prune_seen, trip_readings
 
 from support import stamp
 
@@ -87,6 +87,41 @@ class TripEventDataTests(unittest.TestCase):
     def test_prune_seen_keeps_recent_starts_only(self):
         recent, old = stamp(60), stamp(60 * 24 * 5)
         self.assertEqual(prune_seen([recent, old, "bad"], 4 * 86400), [recent])
+
+
+class UnknownTripFieldTests(unittest.TestCase):
+    def test_undocumented_trip_fields_become_plain_readings(self):
+        trip = {"triggerStartTime": stamp(30), "tripLength": 60000, "tripId": "T-1",
+                "battery": {"cellTemperatureMax": [20, "invalid", 25, 23], "mode": ["eco", "sport"],
+                            "heaterOn": [False, True], "empty": [], "nothing": [None]},
+                "engine": {"rpm": [800], "torque": [10.5, 12.5]}}
+        result, _ = trip_readings("powertrains/data", {"trips": [trip]})
+        temperature = result["powertrains_data_battery_celltemperaturemax"]
+        self.assertEqual((temperature["value"], temperature["name"], temperature["state_class"]),
+                         (23, "Battery cell temperature max (last trip)", "measurement"))
+        self.assertEqual({key: temperature["attributes"][key] for key in
+                          ("trip_min", "trip_max", "trip_mean", "valid_samples", "total_samples", "sample_index")},
+                         {"trip_min": 20, "trip_max": 25, "trip_mean": 22.667, "valid_samples": 3,
+                          "total_samples": 4, "sample_index": 3})
+        self.assertNotIn("unit_of_measurement", temperature)
+        self.assertEqual(result["powertrains_data_battery_mode"]["value"], "sport")
+        self.assertEqual((result["powertrains_data_battery_heateron"]["domain"],
+                          result["powertrains_data_battery_heateron"]["value"]), ("binary_sensor", "ON"))
+        self.assertEqual(result["powertrains_data_tripid"]["value"], "T-1")
+        self.assertNotIn("sample_index", result["powertrains_data_tripid"]["attributes"])
+        self.assertEqual(result["powertrains_data_engine_torque"]["value"], 12.5)
+        # Documented fields keep their spec; empty or null fields stay out.
+        self.assertEqual(result["powertrains_data_engine_rpm"]["unit_of_measurement"], "rpm")
+        for key in ("powertrains_data_battery_empty", "powertrains_data_battery_nothing",
+                    "powertrains_data_triggerstarttime", "powertrains_data_triplength"):
+            self.assertNotIn(key, result)
+
+    def test_unusable_undocumented_values_are_rejected(self):
+        rejections = Rejections("speed")
+        trip = {"triggerStartTime": stamp(30), "odd": [{"nested": 1}], "long": "x" * 300, "inf": [float("inf")]}
+        result, _ = trip_readings("speed", {"trips": [trip]}, rejections)
+        self.assertEqual(sorted(e["path"] for e in rejections.examples), ["inf", "long", "odd"])
+        self.assertEqual(set(result), {"speed_trip_start"})
 
 
 if __name__ == "__main__":
