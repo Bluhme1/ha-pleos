@@ -19,6 +19,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class ReadingSensor(VehicleEntity, SensorEntity):
+    platform_domain = "sensor"
     # Complete trip arrays are available now, without copying them into recorder history.
     _unrecorded_attributes = frozenset({"data", "vin"})
 
@@ -43,7 +44,6 @@ class ReadingSensor(VehicleEntity, SensorEntity):
 
 class ConnectionSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
-    _attr_name = "Connection"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = "enum"
     _attr_translation_key = "connection"
