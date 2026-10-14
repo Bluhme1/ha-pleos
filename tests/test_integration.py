@@ -670,6 +670,22 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         await self.coordinator._async_update_data()
         self.assertEqual(self.client.get.await_count, 10)
 
+    async def test_vehicle_information_keeps_every_vehicle_field(self):
+        car = CAR | {"nickname": "Van", "name": "SV", "modelYear": 2026, "consentDate": "2026-10-01",
+                     "options": {"pv": True}, "api_metadata": "spoof", "colour": None}
+        self.client.vehicles = AsyncMock(return_value=[car])
+        self.client.get = AsyncMock(return_value=None)
+        result = await self.coordinator._async_update_data()
+        info = next(iter(result["cars"].values()))["readings"]["vehicle_information"]
+        attrs = info["attributes"]
+        self.assertEqual(info["value"], "EV")
+        self.assertEqual((attrs["vin"], attrs["nickname"], attrs["model_code"], attrs["model"]),
+                         (CAR["vin"], "Van", "SV", "Example EV"))
+        self.assertEqual((attrs["model_year"], attrs["consent_date"], attrs["options"]), (2026, "2026-10-01", {"pv": True}))
+        self.assertIsInstance(attrs["api_metadata"], dict)
+        self.assertNotIn("colour", attrs)
+        self.assertNotIn("sellname", attrs)
+
     async def test_trip_events_can_be_disabled(self):
         events = self.capture_trip_events()
         self.hass.config_entries.async_update_entry(self.entry, options={"trip_events": False})
