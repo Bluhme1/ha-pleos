@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.helpers import device_registry, entity_registry
@@ -370,7 +370,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         result = await self.coordinator._async_update_data()
         self.assertEqual(len(result["cars"]), 1)
         self.assertTrue(next(iter(result["cars"].values()))["readings"])
-        self.coordinator.trip_cache.clear()
+        self.coordinator.trips.cache.clear()
         self.client.get = AsyncMock(side_effect=ApiError(0, "connection_failed"))
         result = await self.coordinator._async_update_data()
         car = next(iter(result["cars"].values()))
@@ -407,7 +407,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tracker.available)
         self.assertTrue(tracker.extra_state_attributes["data_stale"])
         self.coordinator.options["location"] = False
-        self.coordinator.trip_cache.clear()
+        self.coordinator.trips.cache.clear()
         self.client.get = AsyncMock(return_value=None)
         result = await self.coordinator._async_update_data()
         self.assertEqual(self.client.get.await_count, 9)
@@ -543,7 +543,8 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
 
     def capture_trip_events(self):
         events = []
-        self.addCleanup(self.hass.bus.async_listen(TRIP_EVENT, events.append))
+        # A plain function listener runs in the executor, so its call order is not guaranteed.
+        self.addCleanup(self.hass.bus.async_listen(TRIP_EVENT, callback(lambda event: events.append(event))))
         return events
 
     def serve_trips(self, *trips, endpoint="speed"):
@@ -581,7 +582,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
 
         third = {"triggerStartTime": stamp(10), "tripLength": 500}
         self.serve_trips(first, second, third)
-        restarted.trip_cache.clear()
+        restarted.trips.cache.clear()
         await restarted._async_update_data()
         await self.hass.async_block_till_done()
         self.assertEqual([event.data["trip_start"] for event in events[2:]], [third["triggerStartTime"]])
@@ -625,9 +626,9 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
     async def test_removing_entry_forgets_announced_trips(self):
         self.serve_trips({"triggerStartTime": stamp(30)})
         await self.coordinator._async_update_data()
-        self.assertTrue(await self.coordinator.trip_store.async_load())
+        self.assertTrue(await self.coordinator.trips.store.async_load())
         await async_remove_entry(self.hass, self.entry)
-        self.assertIsNone(await self.coordinator.trip_store.async_load())
+        self.assertIsNone(await self.coordinator.trips.store.async_load())
 
     async def test_trip_endpoints_use_their_own_interval_and_keep_readings(self):
         trip = {"triggerStartTime": stamp(30), "location": {"speed": [42], "speedUnit": ["kph"]}}
@@ -648,7 +649,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(car["readings"]["driving_data_api"]["value"], "no_data")
 
         # Once the interval has passed, trips are fetched again.
-        for cached in self.coordinator.trip_cache.values():
+        for cached in self.coordinator.trips.cache.values():
             cached["fetched_at"] -= timedelta(minutes=60)
         self.client.get.reset_mock()
         await self.coordinator._async_update_data()
@@ -660,7 +661,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(coordinator.async_shutdown)
         self.serve_trips()
         await coordinator._async_update_data()
-        for cached in coordinator.trip_cache.values():
+        for cached in coordinator.trips.cache.values():
             cached["fetched_at"] -= timedelta(minutes=5)
         other = CAR | {"vin": "SYNTHETIC-CAR-002"}
         self.client.vehicles = AsyncMock(return_value=[CAR, other])
@@ -676,7 +677,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.client.get = AsyncMock(side_effect=lambda path: (_ for _ in ()).throw(ApiError(429, "429"))
                                     if "/batteries" in path else None)
         await self.coordinator._async_update_data()
-        self.assertEqual(self.coordinator.trip_cache, {})
+        self.assertEqual(self.coordinator.trips.cache, {})
         self.client.get = AsyncMock(return_value=None)
         await self.coordinator._async_update_data()
         self.assertEqual(self.client.get.await_count, 10)
@@ -707,7 +708,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         await self.hass.async_block_till_done()
         self.assertEqual(events, [])
         self.assertIn("speed_location_speed", next(iter(result["cars"].values()))["readings"])
-        self.assertIsNone(await coordinator.trip_store.async_load())
+        self.assertIsNone(await coordinator.trips.store.async_load())
 
 
 if __name__ == "__main__":
