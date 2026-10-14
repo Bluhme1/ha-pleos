@@ -1,17 +1,32 @@
 """Trip state per account: the fetch interval, reused results and announced trips."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, TRIP_CATCH_UP_DAYS, TRIP_ENDPOINTS, TRIP_EVENT, TRIP_MEMORY_DAYS
-from .data import new_trips, prune_seen
+from .data import new_trips, prune_seen, reported_age
 
 
 def trip_store(hass, entry_id):
     """Trip start times already announced, per car and endpoint, kept across restarts."""
     return Store(hass, 1, f"{DOMAIN}.{entry_id}.trips")
+
+
+def published_store(hass, entry_id):
+    """Trip start times whose readings were already shown, per car and endpoint, kept across restarts."""
+    return Store(hass, 1, f"{DOMAIN}.{entry_id}.published")
+
+
+def trip_start(trip):
+    return datetime.fromisoformat(trip["triggerStartTime"].replace("Z", "+00:00"))
+
+
+def valid_trips(data):
+    trips = data.get("trips") if isinstance(data, dict) else None
+    return [trip for trip in trips if isinstance(trip, dict) and reported_age(trip.get("triggerStartTime")) is not None] \
+        if isinstance(trips, list) else []
 
 
 def window_store(hass, entry_id):
@@ -33,6 +48,33 @@ class TripTracker:
         self.covered_this_poll = {}
         # Longest range queried; lowered to two days if the API refuses longer ranges.
         self.max_days = TRIP_CATCH_UP_DAYS
+        self.published = None  # {car_id: {endpoint: [start, ...]}}: trips whose readings were shown.
+        self.published_store = published_store(hass, entry_id)
+
+    async def load_published(self):
+        if self.published is None:
+            stored = await self.published_store.async_load()
+            self.published = stored if isinstance(stored, dict) else {}
+
+    def unpublished(self, car_id, endpoint, data):
+        """Start times of trips in `data` whose readings were not shown yet."""
+        known = set(self.published.get(car_id, {}).get(endpoint, ()))
+        return {trip["triggerStartTime"] for trip in valid_trips(data)} - known
+
+    async def mark_published(self, shown):
+        """Remember shown trips ({car_id: {endpoint: data}}) and forget old ones."""
+        for car_id, endpoints in shown.items():
+            for endpoint, data in endpoints.items():
+                starts = self.published.setdefault(car_id, {}).setdefault(endpoint, [])
+                starts.extend(start for start in self.unpublished(car_id, endpoint, data))
+        max_age = TRIP_MEMORY_DAYS * 86400
+        pruned = {car_id: {endpoint: kept for endpoint, starts in endpoints.items()
+                           if (kept := prune_seen(starts, max_age))}
+                  for car_id, endpoints in self.published.items()}
+        pruned = {car_id: endpoints for car_id, endpoints in pruned.items() if endpoints}
+        if shown or pruned != self.published:
+            self.published = pruned
+            await self.published_store.async_save(pruned)
 
     async def load_window(self):
         if self.window is None:

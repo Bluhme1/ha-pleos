@@ -12,7 +12,7 @@ from .api import ApiError, AuthError
 from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
 from .data import Rejections, identifier, location, readings, reported_age, trip_readings, vehicle_id
-from .trips import TripTracker
+from .trips import TripTracker, trip_start, valid_trips
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class PleosCoordinator(DataUpdateCoordinator):
                          update_interval=timedelta(minutes=self.options["poll_minutes"]))
         self.trips = TripTracker(hass, entry.entry_id, self.options["trip_poll_minutes"])
         self.archive = ResponseArchive(hass, entry.entry_id, self.brand) if self.options["archive"] else None
+        self.fetched_trips = {}
 
     async def _async_update_data(self):
         try:
@@ -38,6 +39,8 @@ class PleosCoordinator(DataUpdateCoordinator):
             if self.options["trip_events"]:
                 await self.trips.load()
             await self.trips.load_window()
+            await self.trips.load_published()
+            self.fetched_trips = {}  # {car_id: {endpoint: data}} fetched in this poll.
             result = {"status": "connected" if vehicles else "no_vehicles", "cars": {}}
             pending = []
             now = datetime.now(timezone.utc)
@@ -54,6 +57,8 @@ class PleosCoordinator(DataUpdateCoordinator):
             if self.archive:
                 await self.archive.flush()
             await self.trips.save_window()
+            self._show_each_new_trip(result)
+            await self.trips.mark_published(self.fetched_trips)
             return result
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None
@@ -164,9 +169,48 @@ class PleosCoordinator(DataUpdateCoordinator):
             pending.extend((car_id, endpoint, trip) for trip in self.trips.unseen(car_id, endpoint, data))
         car["sources"][endpoint] = start
         car["readings"].update({key: value | {"source": endpoint} for key, value in current.items()})
+        self.fetched_trips.setdefault(car_id, {})[endpoint] = data
         trips = data.get("trips") if isinstance(data, dict) else None
         source["value"] = "available" if isinstance(trips, list) and trips else "no_data"
         source["attributes"]["trip_count"] = len(trips) if isinstance(trips, list) else 0
+
+    def _show_each_new_trip(self, result):
+        """Give every new trip its own state, oldest first, before the latest trip is shown.
+
+        Entities only record what they show, so when several trips arrive in one poll (after
+        the trip interval, a catch-up or late uploads) each one is shown in turn; the
+        recorder and Home Assistant's InfluxDB integration then store every trip once.
+        At step t, each trip endpoint shows its latest trip that started at or before t.
+        """
+        if self.data is None:
+            return  # First refresh: no entities exist yet to record anything.
+        for car_id, endpoints in self.fetched_trips.items():
+            new = set().union(*(self.trips.unpublished(car_id, endpoint, data) for endpoint, data in endpoints.items()))
+            all_trips = [trip for data in endpoints.values() for trip in valid_trips(data)]
+            if not new or not all_trips:
+                continue
+            latest = max(trip_start(trip) for trip in all_trips)
+            steps = sorted({start for start in new}, key=lambda start: trip_start({"triggerStartTime": start}))
+            steps = [start for start in steps if trip_start({"triggerStartTime": start}) != latest]
+            final = result["cars"][car_id]
+            shown_before = (self.data.get("cars") or {}).get(car_id, {}).get("readings", {})
+            for step in steps:
+                moment = trip_start({"triggerStartTime": step})
+                step_readings = dict(final["readings"])
+                for endpoint, data in endpoints.items():
+                    earlier = [trip for trip in valid_trips(data) if trip_start(trip) <= moment]
+                    if not earlier:
+                        # Nothing from this endpoint yet at this moment: keep what was shown before.
+                        replacement = {key: reading for key, reading in shown_before.items()
+                                       if reading.get("source") == endpoint and reading.get("historical")}
+                    else:
+                        readings_at, _ = trip_readings(endpoint, {"trips": earlier})
+                        replacement = {key: value | {"source": endpoint} for key, value in readings_at.items()}
+                    step_readings = {key: reading for key, reading in step_readings.items()
+                                     if not (reading.get("source") == endpoint and reading.get("historical"))}
+                    step_readings |= replacement
+                self.data = result | {"cars": result["cars"] | {car_id: final | {"readings": step_readings}}}
+                self.async_update_listeners()
 
     def _apply_snapshot(self, car, endpoint, data, source):
         stamp = data.get("timestamp") if isinstance(data, dict) else None
