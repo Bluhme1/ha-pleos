@@ -69,6 +69,66 @@ Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle
 
 Entities use descriptive names such as **AC charge limit**, **Cabin fan speed** and **Front left seat heating**. Trip readings include **(last trip)** in their names. Updating display names preserves existing entity IDs and any names you have customised. Documented fields use Home Assistant name translations (English is provided), so they can be translated like any core integration. Fields the API returns without documentation keep a name generated from their path. New entity IDs are always built from the English name, whatever language Home Assistant uses, so they stay the same across languages and future translations.
 
+## Compared with kia_uvo
+
+[kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) (Kia Uvo / Hyundai Bluelink) is the widely used community integration. It is built on [hyundai_kia_connect_api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api), which talks to the backend of the manufacturers' phone apps. This integration uses the official Pleos Vehicle Data API instead. The two can run side by side: they create separate devices and use different accounts and backends.
+
+Compared with kia_uvo 3.17.1 (library 4.35.2) on 14 October 2026.
+
+### How they connect
+
+| | Pleos Vehicle Data (this integration) | kia_uvo |
+| --- | --- | --- |
+| API | Official, documented personal API | Unofficial; uses the phone app's backend |
+| Login | Personal Client ID and Secret from Pleos Playground, renewed manually | App username and password, sometimes a one-time code |
+| Regions | Europe | EU, US, CA, AU, NZ, IN, CN, BR |
+| Brands | Hyundai, Kia, Genesis | Kia, Hyundai; Genesis in Canada only (untested) |
+| Data freshness | Whatever the car last uploaded; trip data arrives with a delay | Cached data every 30 minutes, plus optional force refresh |
+| Wakes the car | Never | On force refresh (every 4 hours by default) |
+| Request limits | Not documented; the integration backs off on HTTP 429 | Shares the app backend's limit (about 200 per day in the EU, community figure) |
+| Remote commands | None (read-only) | Lock, climate, charging, charge limits, windows, horn and lights, schedules, navigation |
+| Breaks when the app changes | No | Can, until the library is updated |
+
+### Data
+
+✔ available · ◐ partial · ✖ not available
+
+| Data | Pleos | kia_uvo |
+| --- | :---: | :---: |
+| State of charge, range, odometer, fuel level | ✔ | ✔ |
+| Range for each powertrain (ICE, EV, HEV, PHEV, hydrogen) | ✔ | ◐ EV, fuel and total |
+| Charging, plugged in, charge limits, time remaining | ✔ | ✔ |
+| Charging status including V2L | ✔ | ◐ V2L and V2X flags |
+| Charging power and current | ✖ | ✔ |
+| 12 V battery level and warning | ✖ | ✔ |
+| Battery state of health, remaining energy | ✖ | ✔ |
+| Battery temperatures, chiller, preconditioning, winter mode (newer cars) | ✖ | ✔ |
+| Charge port door, charging and departure schedules | ✖ | ✔ |
+| Energy consumed and regenerated, 30-day and daily statistics | ✖ | ✔ |
+| Location (latitude, longitude) | ✔ | ✔ |
+| Altitude, heading, speed | ✔ | ✖ |
+| Doors and locks, bonnet, boot, sunroof | ✔ | ✔ |
+| Windows | ✖ | ✔ |
+| Tyre pressures | ✔ | ✔ |
+| Tyre pressure warnings | ✖ | ✔ |
+| Climate state and target temperature | ✔ | ✔ |
+| Climate mode and cabin fan speed | ✔ | ✖ |
+| Seat heating, steering wheel heating, defrost | ✔ | ✔ |
+| Seat ventilation | ✔ | ◐ in seat status |
+| Mirror and rear window heating | ✖ | ✔ |
+| Ignition, accessory and high-voltage power states, sleep mode | ✔ | ◐ no ign1 |
+| Warnings | ◐ list (such as washer fluid, low fuel) | ✔ individual warnings |
+| Lights (turn signals, brake lights, headlights) | ◐ light switch setting during trips | ✔ |
+| Service intervals, fault code count | ✖ | ✔ |
+| Reporting time and data age for each data group | ✔ | ◐ last updated, location updated |
+| Trip summaries (distance, duration) | ✔ | ◐ in the library, daily statistics in HA |
+| Trip sample series (wheel speeds, RPM, HV voltage, acceleration, yaw, steering, gear, seat belts) | ✔ | ✖ |
+| Trip events with every sample, per-trip min, max and mean | ✔ | ✖ |
+| Freezer (Kia PV5) | ✔ | ✖ |
+| 360° camera images | ✖ | ✔ Hyundai |
+
+Availability depends on the vehicle, model year and region in both integrations.
+
 ## Install with HACS
 
 1. [Install and configure HACS](https://www.hacs.dev/docs/use/download/download/) if required.
