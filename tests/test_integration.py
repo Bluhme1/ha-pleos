@@ -158,6 +158,17 @@ class TripAggregateTests(unittest.TestCase):
             self.assertNotIn("driving_data_trip_distance", trip_readings("driving/data", self.trip(odometer={"value": odometer}))[0])
 
 
+class WarningListTests(unittest.TestCase):
+    def test_warnings_keep_full_list_and_count(self):
+        many = [f"warning{index:03d}" for index in range(40)]
+        reading = readings("status", {"warnings": many}, "EV")["status_warnings"]
+        self.assertEqual(len(reading["value"]), 255)
+        self.assertEqual(reading["attributes"], {"warnings": many, "warning_count": 40})
+        empty = readings("status", {"warnings": []}, "EV")["status_warnings"]
+        self.assertEqual((empty["value"], empty["attributes"]), ("None", {"warnings": [], "warning_count": 0}))
+        self.assertNotIn("status_warnings", readings("status", {"warnings": ["ok", 1]}, "EV"))
+
+
 class TripEventDataTests(unittest.TestCase):
     def test_new_trips_skips_seen_invalid_and_duplicate_starts_in_order(self):
         older, newer = stamp(300), stamp(60)
