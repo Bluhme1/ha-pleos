@@ -102,7 +102,7 @@ class PleosCoordinator(DataUpdateCoordinator):
             if endpoint in TRIP_ENDPOINTS:
                 self._apply_trips(car_id, car, endpoint, data, source, pending)
             else:
-                self._apply_snapshot(car, endpoint, data, source)
+                self._apply_snapshot(car_id, car, endpoint, data, source)
         return car
 
     def _vehicle_information(self, vehicle):
@@ -212,11 +212,17 @@ class PleosCoordinator(DataUpdateCoordinator):
                 changed |= self.statistics.add(car_id, endpoint, trip, name)
         await self.statistics.flush(changed)
 
-    def _apply_snapshot(self, car, endpoint, data, source):
+    def _apply_snapshot(self, car_id, car, endpoint, data, source):
         stamp = data.get("timestamp") if isinstance(data, dict) else None
         car["sources"][endpoint] = stamp
         rejections = Rejections(endpoint)
         current = readings(endpoint, data, car["vehicle"].get("type"), rejections)
+        odometer = current.get("driving_odometer")
+        if (odometer and car_id in self.options["odometer_km_vehicles"]
+                and odometer["unit_of_measurement"] == "mi"):
+            # Correct a confirmed API unit-label error without changing the raw response.
+            odometer["unit_of_measurement"] = "km"
+            odometer.setdefault("attributes", {})["api_unit_of_measurement"] = "mi"
         source["attributes"] |= rejections.attributes()
         car["readings"].update({key: value | {"source": endpoint} for key, value in current.items()})
         source["value"] = "available" if current else "no_data"

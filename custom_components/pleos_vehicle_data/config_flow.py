@@ -5,6 +5,7 @@ import probatio as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector, NumberSelector, NumberSelectorConfig, NumberSelectorMode,
@@ -86,7 +87,7 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 # Options shown together in the form; entry options stay flat.
-OPTION_SECTIONS = {"polling": ("poll_minutes", "stale_minutes", "location"),
+OPTION_SECTIONS = {"polling": ("poll_minutes", "stale_minutes", "location", "odometer_km_vehicles"),
                    "trips": ("trip_poll_minutes", "trip_events"),
                    "storage": ("archive",)}
 
@@ -102,9 +103,20 @@ class PleosOptionsFlow(config_entries.OptionsFlowWithReload):
             return self.async_create_entry(title="", data={
                 key: value for fields in user_input.values() for key, value in fields.items()})
         options = DEFAULT_OPTIONS | dict(self.config_entry.options)
+        # Retain saved selections when a car is temporarily missing or the entry is unloaded.
+        vehicles = {car_id: car_id for car_id in options["odometer_km_vehicles"]}
+        for device in dr.async_entries_for_config_entry(dr.async_get(self.hass), self.config_entry.entry_id):
+            for domain, car_id in device.identifiers:
+                if domain == DOMAIN and car_id != self.config_entry.data["brand"] + "_api":
+                    name = device.name_by_user or device.name or car_id
+                    vehicles[car_id] = f"{name} ({car_id[-6:]})"
         selectors = {"poll_minutes": minutes(1440), "stale_minutes": minutes(10080), "location": BooleanSelector(),
                      "trip_poll_minutes": minutes(1440), "trip_events": BooleanSelector(),
-                     "archive": BooleanSelector()}
+                     "archive": BooleanSelector(),
+                     "odometer_km_vehicles": SelectSelector(SelectSelectorConfig(
+                         options=[{"value": car_id, "label": name} for car_id, name in sorted(vehicles.items())],
+                         multiple=True, mode=SelectSelectorMode.DROPDOWN,
+                     ))}
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required(name): section(vol.Schema({
                 vol.Required(key, default=options[key]): selectors[key] for key in keys
