@@ -9,6 +9,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import ApiError, AuthError
+from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
 from .data import identifier, location, readings, reported_age, trip_readings, vehicle_id
 from .trips import TripTracker
@@ -29,6 +30,7 @@ class PleosCoordinator(DataUpdateCoordinator):
         super().__init__(hass, LOGGER, config_entry=entry, name=BRANDS[self.brand],
                          update_interval=timedelta(minutes=self.options["poll_minutes"]))
         self.trips = TripTracker(hass, entry.entry_id, self.options["trip_poll_minutes"])
+        self.archive = ResponseArchive(hass, entry.entry_id, self.brand) if self.options["archive"] else None
 
     async def _async_update_data(self):
         try:
@@ -38,12 +40,18 @@ class PleosCoordinator(DataUpdateCoordinator):
             result = {"status": "connected" if vehicles else "no_vehicles", "cars": {}}
             pending = []
             now = datetime.now(timezone.utc)
+            if self.archive:
+                await self.archive.load()
+                self.archive.begin()
+                self.archive.add_vehicles(now, vehicles, self.client.response_meta.get("/v1/vehicles/consent", {}))
             for vehicle in vehicles:
                 car_id = vehicle_id(self.brand, vehicle["vin"])
                 result["cars"][car_id] = await self._update_car(car_id, vehicle, result, pending, now)
             if self.options["trip_events"]:
                 # Announce only after every car was read, so a failed poll cannot mark trips as seen.
                 await self.trips.announce(self.brand, pending)
+            if self.archive:
+                await self.archive.flush()
             return result
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None
@@ -63,6 +71,9 @@ class PleosCoordinator(DataUpdateCoordinator):
             data = await self._fetch(vehicle, endpoint, source, result, now)
             if data is SKIPPED:
                 continue
+            if self.archive:
+                self.archive.add_response(car_id, endpoint, now, source["attributes"].get("query"),
+                                          source["attributes"].get("api_metadata"), data)
             if endpoint in TRIP_ENDPOINTS:
                 self._apply_trips(car_id, car, endpoint, data, source, pending)
             else:
