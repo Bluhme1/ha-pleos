@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import ApiError, AuthError
 from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
-from .data import identifier, location, readings, reported_age, trip_readings, vehicle_id
+from .data import Rejections, identifier, location, readings, reported_age, trip_readings, vehicle_id
 from .trips import TripTracker
 
 LOGGER = logging.getLogger(__name__)
@@ -131,7 +131,9 @@ class PleosCoordinator(DataUpdateCoordinator):
         return data
 
     def _apply_trips(self, car_id, car, endpoint, data, source, pending):
-        current, start = trip_readings(endpoint, data)
+        rejections = Rejections(endpoint)
+        current, start = trip_readings(endpoint, data, rejections)
+        source["attributes"] |= rejections.attributes()
         if self.options["trip_events"]:
             pending.extend((car_id, endpoint, trip) for trip in self.trips.unseen(car_id, endpoint, data))
         car["sources"][endpoint] = start
@@ -143,7 +145,9 @@ class PleosCoordinator(DataUpdateCoordinator):
     def _apply_snapshot(self, car, endpoint, data, source):
         stamp = data.get("timestamp") if isinstance(data, dict) else None
         car["sources"][endpoint] = stamp
-        current = readings(endpoint, data, car["vehicle"].get("type"))
+        rejections = Rejections(endpoint)
+        current = readings(endpoint, data, car["vehicle"].get("type"), rejections)
+        source["attributes"] |= rejections.attributes()
         car["readings"].update({key: value | {"source": endpoint} for key, value in current.items()})
         source["value"] = "available" if current else "no_data"
         if endpoint == "locations":
