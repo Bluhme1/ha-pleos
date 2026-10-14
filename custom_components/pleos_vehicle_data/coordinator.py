@@ -1,6 +1,7 @@
 """Fetch each account once and share its data across all vehicle entities."""
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -82,6 +83,11 @@ class PleosCoordinator(DataUpdateCoordinator):
                                    "model_code": vehicle.get("name"), "model": vehicle.get("sellname"),
                                    "api_metadata": self.client.response_meta.get("/v1/vehicles/consent", {})},
                 }
+                # Keep every other field Get Vehicles returns, without overwriting the named ones above.
+                named = car["readings"]["vehicle_information"]["attributes"]
+                for field, value in vehicle.items():
+                    if field not in ("vin", "nickname", "name", "sellname", "type") and value is not None:
+                        named.setdefault(identifier(re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(field))), value)
                 for endpoint in ENDPOINTS:
                     prefix = identifier(endpoint)
                     source = {"name": ENDPOINT_NAMES[endpoint] + " API", "value": "no_data", "domain": "sensor",
