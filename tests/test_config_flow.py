@@ -68,34 +68,35 @@ class ConfigFlowTests(HomeAssistantTestCase):
         flow.handler = self.entry.entry_id
         form = await flow.async_step_init()
         submitted = form["data_schema"]({"polling": {"poll_minutes": 20, "stale_minutes": 60, "location": False},
-                                         "trips": {}})
+                                         "trips": {}, "storage": {}})
         self.assertEqual(submitted["polling"]["poll_minutes"], 20)
         # Unchanged fields keep their defaults inside each section.
         self.assertEqual(submitted["trips"], {"trip_poll_minutes": 60, "trip_events": True})
         for invalid in ({"poll_minutes": 1}, {"stale_minutes": 10081}):
             with self.subTest(invalid=invalid), self.assertRaises(Exception):
                 form["data_schema"]({"polling": {"poll_minutes": 15, "stale_minutes": 60, "location": True} | invalid,
-                                     "trips": {}})
+                                     "trips": {}, "storage": {}})
         self.assertTrue(flow.automatic_reload)
         # The frontend receives two expanded sections with their fields.
         fields = probatio.to_field_list(form["data_schema"], custom_serializer=cv.custom_serializer)
         self.assertEqual([(field["name"], field["type"], field["expanded"]) for field in fields],
-                         [("polling", "expandable", True), ("trips", "expandable", True)])
+                         [("polling", "expandable", True), ("trips", "expandable", True), ("storage", "expandable", True)])
         self.assertEqual([item["name"] for item in fields[0]["schema"]], ["poll_minutes", "stale_minutes", "location"])
 
         # Saved options stay flat, so the coordinator and existing entries read them unchanged.
         result = await flow.async_step_init(submitted)
         self.assertEqual(result["data"], {"poll_minutes": 20, "stale_minutes": 60, "location": False,
-                                          "trip_poll_minutes": 60, "trip_events": True})
+                                          "trip_poll_minutes": 60, "trip_events": True, "archive": True})
 
     async def test_options_form_shows_saved_values(self):
         self.hass.config_entries.async_update_entry(self.entry, options={"poll_minutes": 30, "trip_events": False})
         flow = PleosOptionsFlow()
         flow.hass = self.hass
         flow.handler = self.entry.entry_id
-        defaults = (await flow.async_step_init())["data_schema"]({"polling": {}, "trips": {}})
+        defaults = (await flow.async_step_init())["data_schema"]({"polling": {}, "trips": {}, "storage": {}})
         self.assertEqual(defaults, {"polling": {"poll_minutes": 30, "stale_minutes": 60, "location": True},
-                                    "trips": {"trip_poll_minutes": 60, "trip_events": False}})
+                                    "trips": {"trip_poll_minutes": 60, "trip_events": False},
+                                    "storage": {"archive": True}})
 
     async def test_setup_uses_replacement_credentials_and_fresh_token(self):
         self.hass.config_entries.async_update_entry(self.entry, data=OLD | NEW)

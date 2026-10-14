@@ -69,6 +69,18 @@ Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle
 
 Entities use descriptive names such as **AC charge limit**, **Cabin fan speed** and **Front left seat heating**. Trip readings include **(last trip)** in their names. Updating display names preserves existing entity IDs and any names you have customised. Documented fields use Home Assistant name translations (English is provided), so they can be translated like any core integration. Fields the API returns without documentation keep a name generated from their path. New entity IDs are always built from the English name, whatever language Home Assistant uses, so they stay the same across languages and future translations.
 
+### Response archive
+
+Every API response is kept exactly as received, so nothing the API returns is lost, even fields this integration does not understand yet. The archive is on by default and can be turned off under **Storage** in the integration options.
+
+- Files: `<config>/pleos_vehicle_data/archive/<manufacturer>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz`, one gzip-compressed JSON object per line, by UTC day of the request.
+- A snapshot or the vehicle list is written when its content changes; an unchanged response is not written again. Each trip is written once, and again only if Pleos later returns different content for it. Restarts do not cause duplicates.
+- Each record has `schema`, `kind` (`vehicles`, `snapshot`, `trip` or `trip_response`), `fetched_at`, `endpoint`, `vehicle_id`, the trip `query` and the API's `api_metadata`, plus the response in `data` or the trip in `trip`.
+- Nothing is deleted, also not when the integration is removed. Read it with `zcat` or `zgrep`, or `gzip.open` in Python.
+- The **Archive** diagnostic sensor on the manufacturer's API device shows `ok` or `error`, the folder, the last write and the last error.
+
+The archive contains the VIN in the vehicle list and the car's locations. Treat the folder like the rest of your Home Assistant configuration.
+
 ## Compared with kia_uvo
 
 [kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) (Kia Uvo / Hyundai Bluelink) is the widely used community integration. It is built on [hyundai_kia_connect_api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api), which talks to the backend of the manufacturers' phone apps. This integration uses the official Pleos Vehicle Data API instead. The two can run side by side: they create separate devices and use different accounts and backends.

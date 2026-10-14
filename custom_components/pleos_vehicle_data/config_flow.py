@@ -87,7 +87,8 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 # Options shown together in the form; entry options stay flat.
 OPTION_SECTIONS = {"polling": ("poll_minutes", "stale_minutes", "location"),
-                   "trips": ("trip_poll_minutes", "trip_events")}
+                   "trips": ("trip_poll_minutes", "trip_events"),
+                   "storage": ("archive",)}
 
 
 def minutes(maximum):
@@ -102,7 +103,8 @@ class PleosOptionsFlow(config_entries.OptionsFlowWithReload):
                 key: value for fields in user_input.values() for key, value in fields.items()})
         options = DEFAULT_OPTIONS | dict(self.config_entry.options)
         selectors = {"poll_minutes": minutes(1440), "stale_minutes": minutes(10080), "location": BooleanSelector(),
-                     "trip_poll_minutes": minutes(1440), "trip_events": BooleanSelector()}
+                     "trip_poll_minutes": minutes(1440), "trip_events": BooleanSelector(),
+                     "archive": BooleanSelector()}
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required(name): section(vol.Schema({
                 vol.Required(key, default=options[key]): selectors[key] for key in keys

@@ -78,6 +78,15 @@
               "trip_poll_minutes": "How often the four trip endpoints are queried. Pleos delivers trip data with a delay, so this can be longer than the polling interval. Trip readings are kept between queries.",
               "trip_events": "Fires pleos_vehicle_data_trip once per trip with every sample the API returned. Large trips can be excluded from the recorder."
             }
+          },
+          "storage": {
+            "name": "Storage",
+            "data": {
+              "archive": "Archive every API response"
+            },
+            "data_description": {
+              "archive": "Keeps every response exactly as received in compressed files under pleos_vehicle_data/archive in your configuration folder. Unchanged responses are not written again, each trip is stored once, and nothing is deleted."
+            }
           }
         }
       }
@@ -85,6 +94,13 @@
   },
   "entity": {
     "sensor": {
+      "archive": {
+        "name": "Archive",
+        "state": {
+          "ok": "OK",
+          "error": "Error"
+        }
+      },
       "batteries_api": {
         "name": "Battery charging API"
       },
