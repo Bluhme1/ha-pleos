@@ -1,17 +1,22 @@
 """Trip state per account: the fetch interval, reused results and announced trips."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN, TRIP_ENDPOINTS, TRIP_EVENT, TRIP_MEMORY_DAYS
+from .const import DOMAIN, TRIP_CATCH_UP_DAYS, TRIP_ENDPOINTS, TRIP_EVENT, TRIP_MEMORY_DAYS
 from .data import new_trips, prune_seen
 
 
 def trip_store(hass, entry_id):
     """Trip start times already announced, per car and endpoint, kept across restarts."""
     return Store(hass, 1, f"{DOMAIN}.{entry_id}.trips")
+
+
+def window_store(hass, entry_id):
+    """The last UTC day each car's trip endpoints were fetched up to, kept across restarts."""
+    return Store(hass, 1, f"{DOMAIN}.{entry_id}.trip_window")
 
 
 class TripTracker:
@@ -23,6 +28,43 @@ class TripTracker:
         self.seen = None
         # Last trip results per car: {car_id: {"fetched_at": datetime, "endpoints": {endpoint: {...}}}}.
         self.cache = {}
+        self.window = None  # {car_id: {endpoint: "YYYYMMDD"}}: last day fetched successfully.
+        self.window_store = window_store(hass, entry_id)
+        self.covered_this_poll = {}
+        # Longest range queried; lowered to two days if the API refuses longer ranges.
+        self.max_days = TRIP_CATCH_UP_DAYS
+
+    async def load_window(self):
+        if self.window is None:
+            stored = await self.window_store.async_load()
+            self.window = stored if isinstance(stored, dict) else {}
+        self.covered_this_poll = {}
+
+    def query_range(self, car_id, endpoint, now, days=None):
+        """Yesterday and today, reaching back to the last day fetched after downtime."""
+        today = now.date()
+        earliest = today - timedelta(days=(days or self.max_days) - 1)
+        start = min(today - timedelta(days=1), earliest if days else self._last_day(car_id, endpoint) or earliest)
+        return {"startDate": max(start, earliest).strftime("%Y%m%d"), "endDate": today.strftime("%Y%m%d"), "zoneId": "UTC"}
+
+    def _last_day(self, car_id, endpoint):
+        stamp = self.window.get(car_id, {}).get(endpoint)
+        try:
+            return date(int(stamp[:4]), int(stamp[4:6]), int(stamp[6:8]))
+        except (TypeError, ValueError):
+            return None
+
+    def covered(self, car_id, endpoint, query):
+        """Note a successful trip query; it is kept once the whole poll succeeded."""
+        self.covered_this_poll.setdefault(car_id, {})[endpoint] = query["endDate"]
+
+    async def save_window(self):
+        if not self.covered_this_poll:
+            return
+        for car_id, endpoints in self.covered_this_poll.items():
+            self.window.setdefault(car_id, {}).update(endpoints)
+        self.covered_this_poll = {}
+        await self.window_store.async_save(self.window)
 
     def due(self, car_id, now):
         """Trip data arrives with hours of delay, so trips are fetched less often than snapshots."""

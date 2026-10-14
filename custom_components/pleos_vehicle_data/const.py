@@ -14,5 +14,8 @@ ENDPOINT_NAMES = {
 DEFAULT_OPTIONS = {"poll_minutes": 15, "stale_minutes": 60, "location": True, "trip_events": True,
                    "trip_poll_minutes": 60, "archive": True}
 TRIP_EVENT = DOMAIN + "_trip"
-# Trip queries cover two UTC days; keep seen trips a little longer so none are announced twice.
-TRIP_MEMORY_DAYS = 4
+# Trip queries normally cover yesterday and today (UTC); after downtime they reach back to the
+# last day fetched, at most this many days including today.
+TRIP_CATCH_UP_DAYS = 7
+# Announced trips are remembered longer than any query reaches back, so none is announced twice.
+TRIP_MEMORY_DAYS = TRIP_CATCH_UP_DAYS + 2
