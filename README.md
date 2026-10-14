@@ -49,6 +49,12 @@ Numeric trip sensors have `trip_min`, `trip_max`, `trip_mean`, `valid_samples` a
 
 **Trip distance (last trip)** is the difference between the first and last valid odometer samples of the latest driving trip. Its `odometer_start` and `odometer_end` attributes are in kilometres. An invalid final sample does not become a reading. Undocumented fields also get **(last trip)** readings, with numeric summaries where possible. Individual samples have no documented timestamps.
 
+### Units
+
+Status readings use the unit returned by the API. For example, the [odometer response](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-operation-status) can report `km`, `mile`, `meter` or `feet`; these become Home Assistant's `km`, `mi`, `m` or `ft`. Trip odometer samples are documented in kilometres.
+
+Home Assistant converts readings for your unit preferences. To display miles, open the odometer entity's settings and set **Unit of measurement** to **mi**. This converts both the number and label: **1,609.344 km = 1,000 mi**. If a reading differs from the car or app, compare its value and unit with `data.odometer` on the **Driving status API** sensor and include both in an issue report.
+
 ### Trip events
 
 Enable **Trip events** in the integration options to fire a `pleos_vehicle_data_trip` event for each new trip. It is off by default. Events contain every returned sample for use in automations or exports, for example through Node-RED or AppDaemon:
