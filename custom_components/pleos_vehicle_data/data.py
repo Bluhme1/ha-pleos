@@ -109,6 +109,9 @@ def readings(endpoint, data, vehicle_type):
             if path == ("warnings",):
                 if all(isinstance(item, str) for item in value):
                     walk(", ".join(value)[:255] or "None", path)
+                    # The state is cut at 255 characters; the attribute keeps every warning.
+                    if (key := identifier(endpoint + "_warnings")) in result:
+                        result[key]["attributes"] = {"warnings": list(value), "warning_count": len(value)}
                 return
             for index, child in enumerate(value):
                 part = child.get("type") if isinstance(child, dict) else None
