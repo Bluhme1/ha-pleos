@@ -1,17 +1,19 @@
 """Trip events and the trip polling interval."""
 
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
+from urllib.parse import parse_qs
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
 
 from custom_components.pleos_vehicle_data import async_remove_entry
 from custom_components.pleos_vehicle_data.api import ApiError, AuthError
-from custom_components.pleos_vehicle_data.const import DOMAIN
+from custom_components.pleos_vehicle_data.const import DOMAIN, TRIP_CATCH_UP_DAYS, TRIP_MEMORY_DAYS
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import vehicle_id
+from custom_components.pleos_vehicle_data.trips import window_store
 
 from support import CAR, HomeAssistantTestCase, stamp
 
@@ -157,6 +159,113 @@ class TripPollingTests(HomeAssistantTestCase):
         self.assertEqual(events, [])
         self.assertIn("speed_location_speed", next(iter(result["cars"].values()))["readings"])
         self.assertIsNone(await coordinator.trips.store.async_load())
+
+
+class TripCatchUpTests(HomeAssistantTestCase):
+    def serve(self, side_effect=None):
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=side_effect or (lambda path: None))
+
+    def trip_starts(self):
+        """startDate of each trip query in the last poll, by endpoint."""
+        return {path.split(CAR["vin"] + "/", 1)[1].split("?")[0]: parse_qs(path.split("?", 1)[1])["startDate"][0]
+                for path in (call.args[0] for call in self.client.get.await_args_list) if "?" in path}
+
+    def day(self, offset):
+        return (datetime.now(timezone.utc).date() - timedelta(days=offset)).strftime("%Y%m%d")
+
+    async def poll(self, coordinator=None):
+        coordinator = coordinator or self.coordinator
+        coordinator.trips.cache.clear()
+        self.client.get.reset_mock()
+        return await coordinator._async_update_data()
+
+    async def test_first_poll_reaches_back_a_week_then_yesterday_and_today(self):
+        self.serve()
+        await self.poll()
+        self.assertEqual(set(self.trip_starts().values()), {self.day(TRIP_CATCH_UP_DAYS - 1)})
+        self.assertEqual(len(self.trip_starts()), 4)
+        await self.poll()
+        self.assertEqual(set(self.trip_starts().values()), {self.day(1)})
+
+    async def test_after_downtime_queries_start_at_the_last_day_fetched(self):
+        car_id = vehicle_id("kia", CAR["vin"])
+        await window_store(self.hass, self.entry.entry_id).async_save(
+            {car_id: {"speed": self.day(4), "driving/data": self.day(30)}})
+        self.serve()
+        await self.poll()
+        starts = self.trip_starts()
+        self.assertEqual(starts["speed"], self.day(4))
+        self.assertEqual(starts["driving/data"], self.day(TRIP_CATCH_UP_DAYS - 1))
+        self.assertEqual(starts["powertrains/data"], self.day(TRIP_CATCH_UP_DAYS - 1))
+        stored = await window_store(self.hass, self.entry.entry_id).async_load()
+        self.assertEqual(set(stored[car_id].values()), {self.day(0)})
+
+    async def test_no_data_counts_as_fetched_and_failures_do_not(self):
+        car_id = vehicle_id("kia", CAR["vin"])
+
+        def get(path):
+            if "/speed?" in path:
+                raise ApiError(404, "4045")
+            if "/status/data?" in path:
+                raise ApiError(500, "unknown")
+            return None
+        self.serve(get)
+        await self.poll()
+        window = self.coordinator.trips.window[car_id]
+        self.assertEqual(window["speed"], self.day(0))
+        self.assertNotIn("status/data", window)
+
+    async def test_failed_poll_keeps_the_previous_window(self):
+        def get(path):
+            if "/status/data?" in path:
+                raise AuthError("expired")
+            return None
+        self.serve(get)
+        with self.assertRaises(ConfigEntryAuthFailed):
+            await self.poll()
+        self.assertEqual(self.coordinator.trips.window, {})
+        self.assertIsNone(await window_store(self.hass, self.entry.entry_id).async_load())
+
+    async def test_refused_long_range_falls_back_to_two_days(self):
+        def get(path):
+            if "?" in path and parse_qs(path.split("?", 1)[1])["startDate"][0] < self.day(1):
+                raise ApiError(400, "4000")
+            return {"trips": []} if "?" in path else None
+        self.serve(get)
+        await self.poll()
+        self.assertEqual(self.coordinator.trips.max_days, 2)
+        result = await self.poll()
+        self.assertEqual(set(self.trip_starts().values()), {self.day(1)})
+        car = next(iter(result["cars"].values()))
+        self.assertEqual(car["readings"]["speed_api"]["value"], "no_data")
+        self.assertEqual(car["readings"]["speed_api"]["attributes"]["query"]["startDate"], self.day(1))
+
+    async def test_other_failures_do_not_shorten_the_range(self):
+        for error in (ApiError(0, "connection_failed"), ApiError(500, "unknown"), ApiError(400, "4000")):
+            with self.subTest(status=error.status):
+                self.coordinator.trips.max_days = TRIP_CATCH_UP_DAYS
+                # A 400 that also fails on two days is not about the range.
+                self.serve(lambda path, error=error: (_ for _ in ()).throw(error) if "?" in path else None)
+                await self.poll()
+                self.assertEqual(self.coordinator.trips.max_days, TRIP_CATCH_UP_DAYS)
+
+    async def test_removing_the_entry_forgets_the_window(self):
+        self.serve()
+        await self.poll()
+        self.assertIsNotNone(await window_store(self.hass, self.entry.entry_id).async_load())
+        await async_remove_entry(self.hass, self.entry)
+        self.assertIsNone(await window_store(self.hass, self.entry.entry_id).async_load())
+
+    async def test_trips_from_the_whole_window_are_announced_once(self):
+        self.assertGreater(TRIP_MEMORY_DAYS, TRIP_CATCH_UP_DAYS)
+        events = self.capture_trip_events()
+        old = {"triggerStartTime": stamp(60 * 24 * (TRIP_CATCH_UP_DAYS - 1))}
+        self.serve_trips(old)
+        await self.poll()
+        await self.poll()
+        await self.hass.async_block_till_done()
+        self.assertEqual([event.data["trip_start"] for event in events], [old["triggerStartTime"]])
 
 
 if __name__ == "__main__":
