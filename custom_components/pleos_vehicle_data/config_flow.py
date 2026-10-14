@@ -96,4 +96,6 @@ class PleosOptionsFlow(config_entries.OptionsFlowWithReload):
                 NumberSelectorConfig(min=5, max=10080, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
             vol.Required("location", default=options["location"]): BooleanSelector(),
             vol.Required("trip_events", default=options["trip_events"]): BooleanSelector(),
+            vol.Required("trip_poll_minutes", default=options["trip_poll_minutes"]): NumberSelector(
+                NumberSelectorConfig(min=5, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
         }))

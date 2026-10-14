@@ -28,6 +28,8 @@ class PleosCoordinator(DataUpdateCoordinator):
         # Trip start times already announced, per car and endpoint, kept across restarts.
         self.trip_store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips")
         self.seen_trips = None
+        # Last trip results per car, reused between trip fetches.
+        self.trip_cache = {}
 
     async def _load_seen_trips(self):
         if self.seen_trips is None:
@@ -69,6 +71,10 @@ class PleosCoordinator(DataUpdateCoordinator):
                 car = {"vehicle": vehicle, "readings": {}, "sources": {}, "location": None}
                 car_id = vehicle_id(self.brand, vehicle["vin"])
                 result["cars"][car_id] = car
+                cached = self.trip_cache.get(car_id)
+                # Trip data arrives with hours of delay, so trips are fetched less often than snapshots.
+                fetch_trips = cached is None or now - cached["fetched_at"] >= timedelta(
+                    minutes=self.options["trip_poll_minutes"])
                 car["readings"]["vehicle_information"] = {
                     "name": "Vehicle information", "value": vehicle.get("type") or "UNKNOWN", "domain": "sensor",
                     "entity_category": "diagnostic", "source": "vehicles",
@@ -83,6 +89,11 @@ class PleosCoordinator(DataUpdateCoordinator):
                               "options": ["available", "no_data", "error", "disabled"],
                               "attributes": {"fetched_at": now.isoformat()}}
                     car["readings"][prefix + "_api"] = source
+                    if endpoint in TRIP_ENDPOINTS and not fetch_trips:
+                        if reused := cached["endpoints"].get(endpoint):
+                            car["readings"].update(reused["readings"])
+                            car["sources"][endpoint] = reused["start"]
+                        continue
                     if endpoint == "locations" and not self.options["location"]:
                         source["value"] = "disabled"
                         continue
@@ -135,6 +146,12 @@ class PleosCoordinator(DataUpdateCoordinator):
                                 "domain": "sensor", "source": endpoint,
                                 "entity_category": "diagnostic",
                             }
+                if fetch_trips and result["status"] != "rate_limited":
+                    self.trip_cache[car_id] = {"fetched_at": now, "endpoints": {
+                        endpoint: {"start": car["sources"].get(endpoint),
+                                   "readings": {key: reading for key, reading in car["readings"].items()
+                                                if reading.get("source") == endpoint}}
+                        for endpoint in TRIP_ENDPOINTS}}
             if self.options["trip_events"]:
                 # Announce only after every car was read, so a failed poll cannot mark trips as seen.
                 await self._announce_trips(pending)
