@@ -6,6 +6,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BRANDS, DOMAIN
 from .data import reported_age
+from .names import ENTITY_NAMES
 
 
 def discover(entry, async_add_entities, domain, factory):
@@ -29,12 +30,17 @@ def discover(entry, async_add_entities, domain, factory):
 
 class VehicleEntity(CoordinatorEntity):
     _attr_has_entity_name = True
+    platform_domain = None  # Set by each platform's entity class.
 
     def __init__(self, coordinator, car_id, key, spec):
         super().__init__(coordinator)
         self.car_id, self.key, self.spec = car_id, key, spec
         self._attr_unique_id = car_id + "_" + key
-        self._attr_name = spec["name"]
+        if key in ENTITY_NAMES[self.platform_domain]:
+            self._attr_translation_key = key
+        else:
+            # Undocumented fields keep the English name generated from their path.
+            self._attr_name = spec["name"]
         vehicle = coordinator.data["cars"][car_id]["vehicle"]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, car_id)},
@@ -42,6 +48,11 @@ class VehicleEntity(CoordinatorEntity):
             manufacturer=BRANDS[coordinator.brand], model=vehicle.get("sellname") or vehicle.get("name") or "Vehicle",
         )
         self._attr_entity_category = EntityCategory(spec["entity_category"]) if spec.get("entity_category") else None
+
+    @property
+    def suggested_object_id(self):
+        # New entity IDs always come from the English name, whatever the system language.
+        return ENTITY_NAMES[self.platform_domain].get(self.key, self.spec["name"])
 
     @property
     def car(self):

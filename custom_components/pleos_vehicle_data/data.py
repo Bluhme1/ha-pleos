@@ -1,11 +1,18 @@
 """Normalize documented vehicle fields without inventing missing readings."""
 
 import hashlib
+import logging
 import math
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .const import ENDPOINT_NAMES
+
+LOGGER = logging.getLogger(__name__)
+# Rejections kept per endpoint as examples on its diagnostic sensor.
+REJECTION_EXAMPLES = 5
 
 UNITS = {"C": "°C", "F": "°F", "km": "km", "mile": "mi", "miles": "mi",
          "meter": "m", "feet": "ft", "psi": "psi", "kpa": "kPa", "bar": "bar",
@@ -90,15 +97,138 @@ def finite_number(value):
         return False
 
 
-def readings(endpoint, data, vehicle_type):
-    """Keep unknown fields as plain sensors; apply only documented semantics."""
+def scale_pressure(value, unit):
+    """Pleos reports kPa in steps of 5 and bar in tenths; psi is reported as is."""
+    return value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
+
+
+@dataclass(frozen=True)
+class Spec:
+    """Validation and Home Assistant metadata for one documented numeric field."""
+
+    low: float
+    high: float
+    units: tuple | None = None  # Accepted raw units; None accepts any.
+    unit: str | None = None  # Fixed Home Assistant unit, replacing the raw one.
+    device_class: str | None = None
+    state_class: str | None = None  # Replaces the default "measurement" when set.
+    integer: bool = False
+    numeric_text: bool = False  # Also accept numbers sent as strings; the value becomes a float.
+    convert: Callable | None = None  # convert(value, raw_unit) after validation.
+    options: tuple | None = None  # Enum: the value is an index into these options.
+    unit_field: str | None = None  # Trips: the sample array holding each sample's raw unit.
+
+    def check(self, value, raw_unit):
+        """Return the validated, converted value, or None when it must be dropped."""
+        if isinstance(value, bool):
+            return None
+        if self.numeric_text and isinstance(value, (str, int, float)):
+            try:
+                value = float(value)
+            except (ValueError, TypeError, OverflowError):
+                return None
+        if not finite_number(value) or not self.low <= value <= self.high:
+            return None
+        if self.units is not None and raw_unit not in self.units:
+            return None
+        if self.integer and not isinstance(value, int):
+            return None
+        if self.convert:
+            value = self.convert(value, raw_unit)
+        return self.options[value] if self.options else value
+
+    def describe(self):
+        """The rule a rejected value broke, for logs and diagnostics."""
+        text = f"expected {self.low} to {self.high}"
+        if self.units is not None:
+            text += " in " + "/".join(self.units)
+        return text + (" as a whole number" if self.integer else "")
+
+    def metadata(self):
+        if self.options:
+            return {"device_class": "enum", "options": list(self.options)}
+        return {key: value for key, value in (("unit_of_measurement", self.unit), ("device_class", self.device_class),
+                                              ("state_class", self.state_class)) if value}
+
+
+def exact(*paths):
+    return lambda path: path in paths
+
+
+def prefix(*parts):
+    return lambda path: path[:len(parts)] == parts
+
+
+def last(*names):
+    return lambda path: path[-1] in names
+
+
+PERCENT = Spec(0, 100, unit="%", device_class="battery")
+# Documented snapshot fields: (endpoint or None for any, path matcher, spec). The first match applies.
+SNAPSHOT_FIELDS = (
+    ("status", prefix("tire"), Spec(0, 254, units=("psi", "kpa", "bar"), convert=scale_pressure,
+                                     device_class="pressure")),
+    (None, last("stateOfCharge", "remainRatio"), PERCENT),
+    (None, prefix("charge", "targetStateOfCharge"), PERCENT),
+    (None, last("fuelLevel"), Spec(0, 100, unit="%")),
+    (None, exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration")),
+    ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "miles"),
+                                                      numeric_text=True, device_class="distance")),
+    ("driving", exact(("odometer",)), Spec(0, 16777214, units=("km", "mile", "meter", "feet"),
+                                           device_class="distance", state_class="total_increasing")),
+    ("status", exact(("climateControl", "temperature"), ("outsideTemperature",)), Spec(-100, 100, units=("C", "F"))),
+    ("status", exact(("climateControl", "speed")), Spec(-1, 8, integer=True)),
+    ("freezer", exact(("freezer", "temperature")), Spec(-40, 62.3, unit="°C", device_class="temperature")),
+    ("locations", last("latitude"), Spec(-90, 90, unit="°")),
+    ("locations", last("longitude"), Spec(-180, 180, unit="°")),
+    ("locations", last("heading"), Spec(0, 359, unit="°")),
+    ("locations", last("altitude"), Spec(-100, 10000, unit="m", device_class="distance")),
+    ("locations", last("speed"), Spec(0, 1000, units=("kph", "mph", "mps"), device_class="speed")),
+    ("locations", last("type"), Spec(0, 2, integer=True, options=("WGS84", "Bessel", "CoordShift"))),
+)
+
+
+def snapshot_spec(endpoint, path):
+    return next((spec for scope, matches, spec in SNAPSHOT_FIELDS
+                 if scope in (None, endpoint) and matches(path)), None)
+
+
+class Rejections:
+    """Values present in a response but not turned into a reading, with the reason."""
+
+    def __init__(self, endpoint):
+        self.endpoint, self.count, self.examples = endpoint, 0, []
+
+    def add(self, path, value, reason):
+        path = ".".join(map(str, path)) if isinstance(path, tuple) else path
+        if isinstance(value, (int, float)) and (not finite_number(value) or isinstance(value, int) and not -(2**63) <= value < 2**63):
+            value = repr(value)[:100]
+        self.count += 1
+        if len(self.examples) < REJECTION_EXAMPLES:
+            self.examples.append({"path": path, "value": value if isinstance(value, (str, int, float, bool)) else repr(value)[:100],
+                                  "reason": reason})
+        LOGGER.debug("Pleos %s: ignored %s (%s)", self.endpoint, path, reason)
+
+    def attributes(self):
+        return {"rejected_values": self.count, "rejected_examples": self.examples}
+
+
+def readings(endpoint, data, vehicle_type, rejections=None):
+    """Keep unknown fields as plain sensors; apply only documented semantics.
+
+    Values present but not usable are reported to `rejections`; absent values (null)
+    and values the API itself marks "invalid" are not rejections.
+    """
     result = {}
     if not isinstance(data, dict):
         return result
+    reject = rejections.add if rejections is not None else lambda *args: None
 
     def walk(value, path=(), unit=None):
         if isinstance(value, dict):
             local_unit = value.get("unit", unit)
+            if local_unit is not None and local_unit != "invalid" and not isinstance(local_unit, str):
+                reject((*path, "unit"), local_unit, "unit is not text")
             if local_unit == "invalid" or (local_unit is not None and not isinstance(local_unit, str)):
                 return
             for key, child in value.items():
@@ -107,11 +237,18 @@ def readings(endpoint, data, vehicle_type):
             return
         if isinstance(value, list):
             if path == ("warnings",):
+                if not all(isinstance(item, str) for item in value):
+                    reject(path, value, "warnings must all be text")
                 if all(isinstance(item, str) for item in value):
                     walk(", ".join(value)[:255] or "None", path)
+                    # The state is cut at 255 characters; the attribute keeps every warning.
+                    if (key := identifier(endpoint + "_warnings")) in result:
+                        result[key]["attributes"] = {"warnings": list(value), "warning_count": len(value)}
                 return
             for index, child in enumerate(value):
                 part = child.get("type") if isinstance(child, dict) else None
+                if part is not None and part != "invalid" and not isinstance(part, str):
+                    reject((*path, f"row{index + 1}", "type"), part, "type is not text")
                 if part == "invalid" or (part is not None and not isinstance(part, str)):
                     continue
                 walk(child, (*path, part or f"row{index + 1}"), unit)
@@ -119,84 +256,36 @@ def readings(endpoint, data, vehicle_type):
         if value is None or value == "invalid" or not path:
             return
         if not isinstance(value, (str, int, float, bool)):
+            reject(path, value, "unsupported type")
             return
         if isinstance(value, str) and len(value) > 255:
+            reject(path, value[:100] + "…", "text longer than 255 characters")
             return
         if endpoint == "powertrains" and path == ("engine", "fuelLevel") and vehicle_type in ("EV", "FV"):
             return
-        opts = {}
-        domain = "sensor"
+        spec = snapshot_spec(endpoint, path)
+        if spec:
+            raw, value = value, spec.check(value, unit)
+            if value is None:
+                reject(path, raw, spec.describe() + (f", got unit {unit}" if unit else ""))
+                return
         numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if numeric and not finite_number(value):
+            reject(path, value, "not a finite number")
+            return
+        opts = {}
         if numeric:
-            if not finite_number(value):
-                return
             opts["state_class"] = "measurement"
-        if endpoint == "status" and path[0] == "tire":
-            if not numeric or not 0 <= value <= 254 or unit not in ("psi", "kpa", "bar"):
-                return
-            value = value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
-            opts["device_class"] = "pressure"
-        if unit in UNITS and numeric:
-            opts["unit_of_measurement"] = UNITS[unit]
-            if unit in ("C", "F"):
-                opts["device_class"] = "temperature"
-        if path[-1] in ("stateOfCharge", "remainRatio", "fuelLevel") or path[:2] == ("charge", "targetStateOfCharge"):
-            if not numeric or not 0 <= value <= 100:
-                return
-            opts["unit_of_measurement"] = "%"
-            if path[-1] != "fuelLevel":
-                opts["device_class"] = "battery"
-        if path == ("charge", "remainTime"):
-            if not numeric or not 0 <= value <= 65535:
-                return
-            opts.update(unit_of_measurement="min", device_class="duration")
-        if endpoint == "powertrains" and path[0] == "distanceToEmpties":
-            if isinstance(value, bool):
-                return
-            try:
-                value = float(value)
-            except (ValueError, TypeError):
-                return
-            if not math.isfinite(value) or not 1 <= value <= 4095 or unit not in ("feet", "km", "meter", "miles"):
-                return
-            opts.update(unit_of_measurement=UNITS[unit], device_class="distance", state_class="measurement")
-        if endpoint == "driving" and path == ("odometer",):
-            if not numeric or not 0 <= value <= 16777214 or unit not in ("km", "mile", "meter", "feet"):
-                return
-            opts.update(device_class="distance", state_class="total_increasing")
-        if endpoint == "status" and path in (("climateControl", "temperature"), ("outsideTemperature",)):
-            if not numeric or not -100 <= value <= 100 or unit not in ("C", "F"):
-                return
-        if endpoint == "status" and path == ("climateControl", "speed"):
-            if not numeric or not isinstance(value, int) or not -1 <= value <= 8:
-                return
-        if endpoint == "freezer" and path == ("freezer", "temperature"):
-            if not numeric or not -40 <= value <= 62.3:
-                return
-            opts.update(unit_of_measurement="°C", device_class="temperature")
-        if endpoint == "locations":
-            limits = {"latitude": (-90, 90), "longitude": (-180, 180), "altitude": (-100, 10000),
-                      "heading": (0, 359), "speed": (0, 1000), "type": (0, 2)}
-            field = path[-1]
-            if field in limits:
-                if not numeric or not limits[field][0] <= value <= limits[field][1]:
-                    return
-                if field == "type":
-                    if not isinstance(value, int):
-                        return
-                    systems = ["WGS84", "Bessel", "CoordShift"]
-                    value = systems[value]
-                    opts = {"device_class": "enum", "options": systems}
-                elif field in ("latitude", "longitude", "heading"):
-                    opts["unit_of_measurement"] = "°"
-                elif field == "altitude":
-                    opts.update(unit_of_measurement="m", device_class="distance")
-                elif field == "speed":
-                    if unit not in ("kph", "mph", "mps"):
-                        return
-                    opts["device_class"] = "speed"
+            if unit in UNITS:
+                opts["unit_of_measurement"] = UNITS[unit]
+                if unit in ("C", "F"):
+                    opts["device_class"] = "temperature"
+        if spec:
+            opts = spec.metadata() if spec.options else opts | spec.metadata()
+        domain = "sensor"
         if path == ("charge", "plugin"):
             if value not in ("connected", "disconnected"):
+                reject(path, value, "expected connected or disconnected")
                 return
             value = value == "connected"
             opts["device_class"] = "plug"
@@ -228,46 +317,90 @@ def location(data):
     return point if -90 <= lat <= 90 and -180 <= lon <= 180 else None
 
 
-# Paths, ranges and units from the four Pleos trip-data response schemas.
+# Paths, ranges and units from the four Pleos trip-data response schemas. None marks a text field.
+SPEED_SAMPLE = Spec(0, 254, units=("kph", "mph"), unit_field="location.speedUnit", device_class="speed")
+TYRE_SAMPLE = Spec(0, 254, units=("psi", "kpa", "bar"), unit_field="tire.pressureUnit", convert=scale_pressure,
+                   device_class="pressure")
 TRIP_FIELDS = {
     "powertrains/data": {
-        "batteries.hv.voltage": (0, 6553, "V", "voltage"),
-        "engine.oilTemperature": (0, 150.5, "°C", "temperature"),
-        "engine.rpm": (0, 16383.5, "rpm", None),
+        "batteries.hv.voltage": Spec(0, 6553, unit="V", device_class="voltage"),
+        "engine.oilTemperature": Spec(0, 150.5, unit="°C", device_class="temperature"),
+        "engine.rpm": Spec(0, 16383.5, unit="rpm"),
     },
     "speed": {
-        "location.speed": (0, 254, None, "speed"),
+        "location.speed": SPEED_SAMPLE,
         "location.speedUnit": None,
-        **{f"wheel.speed{side}": (0, 511.9375, "km/h", "speed")
+        **{f"wheel.speed{side}": Spec(0, 511.9375, unit="km/h", device_class="speed")
            for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
     },
     "driving/data": {
         "ignition.status": None,
-        "odometer.value": (0, 1677721.4, "km", "distance"),
-        "acceleration.longitudinal": (-4.177, 4.177, "g", None),
-        "angularVelocity.yaw": (-40.95, 40.95, "°/s", None),
+        "odometer.value": Spec(0, 1677721.4, unit="km", device_class="distance"),
+        "acceleration.longitudinal": Spec(-4.177, 4.177, unit="g"),
+        "angularVelocity.yaw": Spec(-40.95, 40.95, unit="°/s"),
         "isla.optionUsm": None,
         "isla.optionUsm2": None,
         "seatbelt.assistance": None,
         "seatbelt.driver": None,
-        "steeringWheel.angle": (-3276.8, 3276.7, "°", None),
-        "steeringWheel.rotationSpeed": (0, 1016, "°/s", None),
+        "steeringWheel.angle": Spec(-3276.8, 3276.7, unit="°"),
+        "steeringWheel.rotationSpeed": Spec(0, 1016, unit="°/s"),
         "transmission.gear": None,
     },
     "status/data": {
         **{f"doors.open{side}": None for side in ("Assistance", "Driver", "RearLeft", "RearRight")},
         "lamp.setting": None,
-        **{f"tire.pressure{side}": (0, 254, None, "pressure")
-           for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
+        **{f"tire.pressure{side}": TYRE_SAMPLE for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
         "tire.pressureUnit": None,
         "warnings.lowFuelLevel": None,
-        "outsideTemperature.value": (-40, 60, "°C", "temperature"),
+        "outsideTemperature.value": Spec(-40, 60, unit="°C", device_class="temperature"),
     },
 }
 
 
-def trip_readings(endpoint, data):
-    """Expose the latest trip's last samples; the API does not supply sample times."""
+def new_trips(data, seen):
+    """Return valid trips whose start time is not in `seen`, oldest first."""
+    trips = data.get("trips") if isinstance(data, dict) else None
+    if not isinstance(trips, list):
+        return []
+    fresh = {}
+    for trip in trips:
+        if not isinstance(trip, dict) or reported_age(trip.get("triggerStartTime")) is None:
+            continue
+        start = trip["triggerStartTime"]
+        if start not in seen:
+            # A start time identifies a trip; keep the first copy if the API repeats one.
+            fresh.setdefault(start, trip)
+    return sorted(fresh.values(), key=lambda t: datetime.fromisoformat(t["triggerStartTime"].replace("Z", "+00:00")))
+
+
+def prune_seen(starts, max_age):
+    """Drop remembered trip starts older than `max_age` seconds, or ones no longer parseable."""
+    return sorted(start for start in starts if (age := reported_age(start)) is not None and age <= max_age)
+
+
+def trip_leaves(trip, path=()):
+    """Every non-dict value of a trip with its dotted path, except the trip's start and length."""
+    for key, value in trip.items():
+        if not path and key in ("triggerStartTime", "tripLength"):
+            continue
+        if isinstance(value, dict):
+            yield from trip_leaves(value, (*path, str(key)))
+        else:
+            yield ".".join((*path, str(key))), value
+
+
+def summary(values):
+    return {"trip_min": min(values), "trip_max": max(values), "trip_mean": round(sum(values) / len(values), 3),
+            "valid_samples": len(values)}
+
+
+def trip_readings(endpoint, data, rejections=None):
+    """Expose the latest trip's last samples; the API does not supply sample times.
+
+    Documented fields use their spec; any other field becomes a plain reading. Present but
+    unusable last samples are reported to `rejections`.
+    """
+    reject = rejections.add if rejections is not None else lambda *args: None
     trips = data.get("trips") if isinstance(data, dict) else None
     if not isinstance(trips, list):
         return {}, None
@@ -294,6 +427,14 @@ def trip_readings(endpoint, data):
             value = value.get(part) if isinstance(value, dict) else None
         return value if isinstance(value, list) else []
 
+    def numeric_sample(field, spec, index):
+        """Return one valid sample as (value, unit), converted like the last-sample sensor."""
+        values = samples(field)
+        units = samples(spec.unit_field) if spec.unit_field else []
+        raw_unit = units[index] if spec.unit_field and 0 <= index < len(units) else None
+        value = spec.check(values[index] if 0 <= index < len(values) else None, raw_unit)
+        return None if value is None else (value, spec.unit or UNITS.get(raw_unit))
+
     for field, spec in TRIP_FIELDS[endpoint].items():
         values = samples(field)
         if not values or values[-1] is None or values[-1] == "invalid":
@@ -304,27 +445,69 @@ def trip_readings(endpoint, data):
                    "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
         if spec is None:
             if not isinstance(value, str) or len(value) > 255:
+                reject(field, value if isinstance(value, (int, float, bool)) else repr(value)[:100], "expected text up to 255 characters")
                 continue
         else:
-            low, high, unit, device_class = spec
-            if not finite_number(value) or not low <= value <= high:
+            last = numeric_sample(field, spec, index)
+            if last is None:
+                reject(field, value if isinstance(value, (str, int, float, bool)) else repr(value)[:100], spec.describe())
                 continue
-            if field == "location.speed":
-                units = samples("location.speedUnit")
-                unit = UNITS.get(units[index]) if len(units) > index and units[index] in ("kph", "mph") else None
-                if unit is None:
-                    continue
-            elif field.startswith("tire.pressure"):
-                units = samples("tire.pressureUnit")
-                raw_unit = units[index] if len(units) > index else None
-                if raw_unit not in ("psi", "kpa", "bar"):
-                    continue
-                unit = UNITS[raw_unit]
-                reading["value"] = value * 5 if raw_unit == "kpa" else value / 10 if raw_unit == "bar" else value
+            reading["value"], unit = last
+            # Summarise every valid sample of the trip in the last sample's unit.
+            valid = [sample[0] for i in range(len(values))
+                     if (sample := numeric_sample(field, spec, i)) is not None and sample[1] == unit]
+            reading["attributes"].update(
+                trip_min=min(valid), trip_max=max(valid), trip_mean=round(sum(valid) / len(valid), 3),
+                valid_samples=len(valid), total_samples=len(values),
+            )
             reading["state_class"] = "measurement"
             if unit:
                 reading["unit_of_measurement"] = unit
-            if device_class:
-                reading["device_class"] = device_class
+            if spec.device_class:
+                reading["device_class"] = spec.device_class
         result[prefix + "_" + identifier(field)] = reading
+
+    # Fields Pleos returns without documentation: the last sample as a plain reading.
+    for field, value in trip_leaves(trip):
+        key = prefix + "_" + identifier(field)
+        if field in TRIP_FIELDS[endpoint] or key in result:
+            continue
+        values = value if isinstance(value, list) else None
+        last = values[-1] if values else value
+        if last is None or last == "invalid" or values == []:
+            continue
+        name = label(tuple(field.split("."))) + " (last trip)"
+        attributes = {"trip_start": start, "trip_length_ms": length}
+        if values is not None:
+            attributes |= {"sample_index": len(values) - 1, "total_samples": len(values)}
+        reading = {"name": name, "domain": "sensor", "historical": True, "attributes": attributes}
+        if isinstance(last, bool):
+            reading.update(domain="binary_sensor", value="ON" if last else "OFF")
+        elif isinstance(last, (int, float)):
+            if not finite_number(last):
+                reject(field, repr(last), "not a finite number")
+                continue
+            reading.update(value=last, state_class="measurement")
+            if values is not None:
+                attributes |= summary([sample for sample in values if finite_number(sample)])
+        elif isinstance(last, str) and len(last) <= 255:
+            reading["value"] = last
+        else:
+            reject(field, last[:100] + "…" if isinstance(last, str) else repr(last)[:100],
+                   "text longer than 255 characters" if isinstance(last, str) else "unsupported type")
+            continue
+        result[key] = reading
+
+    if endpoint == "driving/data":
+        spec = TRIP_FIELDS[endpoint]["odometer.value"]
+        mileage = [sample[0] for i in range(len(samples("odometer.value")))
+                   if (sample := numeric_sample("odometer.value", spec, i)) is not None]
+        if len(mileage) >= 2 and mileage[-1] >= mileage[0]:
+            result[prefix + "_trip_distance"] = {
+                "name": "Trip distance (last trip)", "value": round(mileage[-1] - mileage[0], 1),
+                "unit_of_measurement": "km", "device_class": "distance", "state_class": "measurement",
+                "domain": "sensor", "historical": True,
+                "attributes": {"trip_start": start, "trip_length_ms": length,
+                               "odometer_start": mileage[0], "odometer_end": mileage[-1]},
+            }
     return result, start

@@ -4,6 +4,7 @@ import probatio as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector, NumberSelector, NumberSelectorConfig, NumberSelectorMode,
@@ -84,15 +85,29 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return PleosOptionsFlow()
 
 
+# Options shown together in the form; entry options stay flat.
+OPTION_SECTIONS = {"polling": ("poll_minutes", "stale_minutes", "location"),
+                   "trips": ("trip_poll_minutes", "trip_events"),
+                   "storage": ("archive",)}
+
+
+def minutes(maximum):
+    return NumberSelector(NumberSelectorConfig(min=5, max=maximum, step=1, mode=NumberSelectorMode.BOX,
+                                               unit_of_measurement="min"))
+
+
 class PleosOptionsFlow(config_entries.OptionsFlowWithReload):
     async def async_step_init(self, user_input=None):
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(title="", data={
+                key: value for fields in user_input.values() for key, value in fields.items()})
         options = DEFAULT_OPTIONS | dict(self.config_entry.options)
+        selectors = {"poll_minutes": minutes(1440), "stale_minutes": minutes(10080), "location": BooleanSelector(),
+                     "trip_poll_minutes": minutes(1440), "trip_events": BooleanSelector(),
+                     "archive": BooleanSelector()}
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
-            vol.Required("poll_minutes", default=options["poll_minutes"]): NumberSelector(
-                NumberSelectorConfig(min=5, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
-            vol.Required("stale_minutes", default=options["stale_minutes"]): NumberSelector(
-                NumberSelectorConfig(min=5, max=10080, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
-            vol.Required("location", default=options["location"]): BooleanSelector(),
+            vol.Required(name): section(vol.Schema({
+                vol.Required(key, default=options[key]): selectors[key] for key in keys
+            }), {"collapsed": False})
+            for name, keys in OPTION_SECTIONS.items()
         }))

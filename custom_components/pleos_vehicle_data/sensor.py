@@ -11,16 +11,19 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BRANDS, DOMAIN
 from .entity import VehicleEntity, discover
+from .names import ENTITY_NAMES
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    async_add_entities([ConnectionSensor(entry.runtime_data)])
+    coordinator = entry.runtime_data
+    async_add_entities([ConnectionSensor(coordinator)] + ([ArchiveSensor(coordinator)] if coordinator.archive else []))
     discover(entry, async_add_entities, "sensor", ReadingSensor)
 
 
 class ReadingSensor(VehicleEntity, SensorEntity):
+    platform_domain = "sensor"
     # Complete trip arrays are available now, without copying them into recorder history.
-    _unrecorded_attributes = frozenset({"data", "vin"})
+    _unrecorded_attributes = frozenset({"data", "vin", "rejected_examples"})
 
     def __init__(self, coordinator, car_id, key, spec):
         super().__init__(coordinator, car_id, key, spec)
@@ -43,11 +46,13 @@ class ReadingSensor(VehicleEntity, SensorEntity):
 
 class ConnectionSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
-    _attr_name = "Connection"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = "enum"
     _attr_translation_key = "connection"
     _attr_options = ["connected", "no_vehicles", "key_required", "api_unavailable", "rate_limited"]
+
+    # The entity ID stays English, like every other entity of this integration.
+    suggested_object_id = ENTITY_NAMES["sensor"]["connection"]
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
@@ -67,3 +72,34 @@ class ConnectionSensor(CoordinatorEntity, SensorEntity):
         if isinstance(self.coordinator.last_exception, ConfigEntryAuthFailed):
             return "key_required"
         return "rate_limited" if self.coordinator.client.retry_at > time.monotonic() else "api_unavailable"
+
+
+class ArchiveSensor(CoordinatorEntity, SensorEntity):
+    """Whether this account's response archive is being written."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = "enum"
+    _attr_translation_key = "archive"
+    _attr_options = ["ok", "error"]
+    suggested_object_id = ENTITY_NAMES["sensor"]["archive"]
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = coordinator.brand + "_archive"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.brand + "_api")})
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        return self.coordinator.archive.status["state"]
+
+    @property
+    def extra_state_attributes(self):
+        status = self.coordinator.archive.status
+        return {"directory": str(self.coordinator.archive.directory), "last_written_at": status["last_written_at"],
+                "records_last_poll": status["records_last_poll"], "records_written_since_start": status["records_written"],
+                "last_error": status["last_error"]}

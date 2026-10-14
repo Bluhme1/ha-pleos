@@ -53,21 +53,83 @@
     "step": {
       "init": {
         "title": "Vehicle data options",
-        "description": "More frequent polling does not make the car upload sooner. Valid last-reported values stay visible while the car is parked. The stale-data threshold marks older readings with data_stale; it does not make them unavailable. Options reload this integration automatically.",
-        "data": {
-          "poll_minutes": "Polling interval",
-          "stale_minutes": "Stale-data threshold",
-          "location": "Enable location data and GPS tracking"
-        },
-        "data_description": {
-          "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+        "description": "Options reload this integration automatically.",
+        "sections": {
+          "polling": {
+            "name": "Vehicle status",
+            "description": "More frequent polling does not make the car upload sooner. Valid last-reported values stay visible while the car is parked.",
+            "data": {
+              "poll_minutes": "Polling interval",
+              "stale_minutes": "Stale-data threshold",
+              "location": "Enable location data and GPS tracking"
+            },
+            "data_description": {
+              "stale_minutes": "Older readings are marked with data_stale; they do not become unavailable.",
+              "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+            }
+          },
+          "trips": {
+            "name": "Trips",
+            "data": {
+              "trip_poll_minutes": "Trip data interval",
+              "trip_events": "Fire an event for each new trip"
+            },
+            "data_description": {
+              "trip_poll_minutes": "How often the four trip endpoints are queried. Pleos delivers trip data with a delay, so this can be longer than the polling interval. Trip readings are kept between queries.",
+              "trip_events": "Off by default. Fires pleos_vehicle_data_trip once per trip with every sample the API returned. Large trips can be excluded from the recorder."
+            }
+          },
+          "storage": {
+            "name": "Storage",
+            "data": {
+              "archive": "Archive raw vehicle data"
+            },
+            "data_description": {
+              "archive": "Off by default. Keeps raw snapshot payloads and trip objects in compressed files under pleos_vehicle_data/archive in your configuration folder. Unchanged responses are not written again, each trip is stored once, and nothing is deleted."
+            }
+          }
         }
       }
     }
   },
   "entity": {
     "sensor": {
+      "archive": {
+        "name": "Archive",
+        "state": {
+          "ok": "OK",
+          "error": "Error"
+        }
+      },
+      "batteries_api": {
+        "name": "Battery charging API"
+      },
+      "batteries_charge_batterycapacity": {
+        "name": "Battery capacity"
+      },
+      "batteries_charge_remaintime": {
+        "name": "Charge time remaining"
+      },
+      "batteries_charge_stateofcharge": {
+        "name": "Battery level"
+      },
+      "batteries_charge_status": {
+        "name": "Charging status"
+      },
+      "batteries_charge_targetstateofcharge_quick": {
+        "name": "DC charge limit"
+      },
+      "batteries_charge_targetstateofcharge_standard": {
+        "name": "AC charge limit"
+      },
+      "batteries_data_age": {
+        "name": "Battery charging data age"
+      },
+      "batteries_reported_at": {
+        "name": "Battery charging last reported"
+      },
       "connection": {
+        "name": "Connection",
         "state": {
           "connected": "Connected",
           "no_vehicles": "No vehicles",
@@ -75,6 +137,349 @@
           "api_unavailable": "API unavailable",
           "rate_limited": "Rate limited"
         }
+      },
+      "driving_api": {
+        "name": "Driving status API"
+      },
+      "driving_data_acceleration_longitudinal": {
+        "name": "Forward acceleration (last trip)"
+      },
+      "driving_data_age": {
+        "name": "Driving status data age"
+      },
+      "driving_data_angularvelocity_yaw": {
+        "name": "Turning rate (last trip)"
+      },
+      "driving_data_api": {
+        "name": "Driving trips API"
+      },
+      "driving_data_ignition_status": {
+        "name": "Ignition (last trip)"
+      },
+      "driving_data_isla_optionusm": {
+        "name": "Speed limit assist setting (last trip)"
+      },
+      "driving_data_isla_optionusm2": {
+        "name": "Speed limit assist secondary setting (last trip)"
+      },
+      "driving_data_odometer_value": {
+        "name": "Odometer (last trip)"
+      },
+      "driving_data_seatbelt_assistance": {
+        "name": "Passenger seat belt (last trip)"
+      },
+      "driving_data_seatbelt_driver": {
+        "name": "Driver seat belt (last trip)"
+      },
+      "driving_data_steeringwheel_angle": {
+        "name": "Steering wheel angle (last trip)"
+      },
+      "driving_data_steeringwheel_rotationspeed": {
+        "name": "Steering wheel turning speed (last trip)"
+      },
+      "driving_data_transmission_gear": {
+        "name": "Gear (last trip)"
+      },
+      "driving_data_trip_distance": {
+        "name": "Trip distance (last trip)"
+      },
+      "driving_data_trip_duration": {
+        "name": "Driving trips duration"
+      },
+      "driving_data_trip_start": {
+        "name": "Driving trips start"
+      },
+      "driving_ignition_ignitiondetails_acc_status": {
+        "name": "Accessory power"
+      },
+      "driving_ignition_ignitiondetails_ign1_status": {
+        "name": "Ignition power"
+      },
+      "driving_ignition_ignitiondetails_ign3_status": {
+        "name": "High-voltage system power"
+      },
+      "driving_ignition_status": {
+        "name": "Ignition"
+      },
+      "driving_odometer": {
+        "name": "Odometer"
+      },
+      "driving_reported_at": {
+        "name": "Driving status last reported"
+      },
+      "driving_sleepmode": {
+        "name": "Sleep mode"
+      },
+      "freezer_api": {
+        "name": "Freezer status API"
+      },
+      "freezer_data_age": {
+        "name": "Freezer status data age"
+      },
+      "freezer_freezer_status": {
+        "name": "Freezer"
+      },
+      "freezer_freezer_temperature": {
+        "name": "Freezer temperature"
+      },
+      "freezer_reported_at": {
+        "name": "Freezer status last reported"
+      },
+      "locations_api": {
+        "name": "Location API"
+      },
+      "locations_data_age": {
+        "name": "Location data age"
+      },
+      "locations_location_altitude": {
+        "name": "Altitude"
+      },
+      "locations_location_heading": {
+        "name": "Heading"
+      },
+      "locations_location_latitude": {
+        "name": "Latitude"
+      },
+      "locations_location_longitude": {
+        "name": "Longitude"
+      },
+      "locations_location_speed": {
+        "name": "Speed"
+      },
+      "locations_location_type": {
+        "name": "Coordinate system"
+      },
+      "locations_reported_at": {
+        "name": "Location last reported"
+      },
+      "powertrains_api": {
+        "name": "Powertrain status API"
+      },
+      "powertrains_batteries_main_remainratio": {
+        "name": "Traction battery level"
+      },
+      "powertrains_data_age": {
+        "name": "Powertrain status data age"
+      },
+      "powertrains_data_api": {
+        "name": "Powertrain trips API"
+      },
+      "powertrains_data_batteries_hv_voltage": {
+        "name": "Traction battery voltage (last trip)"
+      },
+      "powertrains_data_engine_oiltemperature": {
+        "name": "Engine oil temperature (last trip)"
+      },
+      "powertrains_data_engine_rpm": {
+        "name": "Engine speed (last trip)"
+      },
+      "powertrains_data_trip_duration": {
+        "name": "Powertrain trips duration"
+      },
+      "powertrains_data_trip_start": {
+        "name": "Powertrain trips start"
+      },
+      "powertrains_distancetoempties_ev": {
+        "name": "EV range"
+      },
+      "powertrains_distancetoempties_fcev": {
+        "name": "Hydrogen range"
+      },
+      "powertrains_distancetoempties_hev": {
+        "name": "Hybrid range"
+      },
+      "powertrains_distancetoempties_ice": {
+        "name": "Fuel range"
+      },
+      "powertrains_distancetoempties_phev": {
+        "name": "Plug-in hybrid range"
+      },
+      "powertrains_engine_fuellevel": {
+        "name": "Fuel level"
+      },
+      "powertrains_reported_at": {
+        "name": "Powertrain status last reported"
+      },
+      "speed_api": {
+        "name": "Speed trips API"
+      },
+      "speed_location_speed": {
+        "name": "Speed (last trip)"
+      },
+      "speed_location_speedunit": {
+        "name": "Speed unit (last trip)"
+      },
+      "speed_trip_duration": {
+        "name": "Speed trips duration"
+      },
+      "speed_trip_start": {
+        "name": "Speed trips start"
+      },
+      "speed_wheel_speedfrontleft": {
+        "name": "Front left wheel speed (last trip)"
+      },
+      "speed_wheel_speedfrontright": {
+        "name": "Front right wheel speed (last trip)"
+      },
+      "speed_wheel_speedrearleft": {
+        "name": "Rear left wheel speed (last trip)"
+      },
+      "speed_wheel_speedrearright": {
+        "name": "Rear right wheel speed (last trip)"
+      },
+      "status_api": {
+        "name": "Vehicle status API"
+      },
+      "status_climatecontrol_mode": {
+        "name": "Climate mode"
+      },
+      "status_climatecontrol_speed": {
+        "name": "Cabin fan speed"
+      },
+      "status_climatecontrol_status": {
+        "name": "Climate control"
+      },
+      "status_climatecontrol_temperature": {
+        "name": "Cabin target temperature"
+      },
+      "status_data_age": {
+        "name": "Vehicle status data age"
+      },
+      "status_data_api": {
+        "name": "Vehicle status trips API"
+      },
+      "status_data_doors_openassistance": {
+        "name": "Front passenger door (last trip)"
+      },
+      "status_data_doors_opendriver": {
+        "name": "Driver door (last trip)"
+      },
+      "status_data_doors_openrearleft": {
+        "name": "Rear left door (last trip)"
+      },
+      "status_data_doors_openrearright": {
+        "name": "Rear right door (last trip)"
+      },
+      "status_data_lamp_setting": {
+        "name": "Exterior light setting (last trip)"
+      },
+      "status_data_outsidetemperature_value": {
+        "name": "Outside temperature (last trip)"
+      },
+      "status_data_tire_pressurefrontleft": {
+        "name": "Front left tyre pressure (last trip)"
+      },
+      "status_data_tire_pressurefrontright": {
+        "name": "Front right tyre pressure (last trip)"
+      },
+      "status_data_tire_pressurerearleft": {
+        "name": "Rear left tyre pressure (last trip)"
+      },
+      "status_data_tire_pressurerearright": {
+        "name": "Rear right tyre pressure (last trip)"
+      },
+      "status_data_tire_pressureunit": {
+        "name": "Tyre pressure unit (last trip)"
+      },
+      "status_data_trip_duration": {
+        "name": "Vehicle status trips duration"
+      },
+      "status_data_trip_start": {
+        "name": "Vehicle status trips start"
+      },
+      "status_data_warnings_lowfuellevel": {
+        "name": "Low fuel warning (last trip)"
+      },
+      "status_doors_row1_left": {
+        "name": "Front left door"
+      },
+      "status_doors_row1_right": {
+        "name": "Front right door"
+      },
+      "status_doors_row2_left": {
+        "name": "Rear left door"
+      },
+      "status_doors_row2_right": {
+        "name": "Rear right door"
+      },
+      "status_hood": {
+        "name": "Bonnet"
+      },
+      "status_outsidetemperature": {
+        "name": "Outside temperature"
+      },
+      "status_reported_at": {
+        "name": "Vehicle status last reported"
+      },
+      "status_seats_row1_left_heat": {
+        "name": "Front left seat heating"
+      },
+      "status_seats_row1_left_ventilation": {
+        "name": "Front left seat ventilation"
+      },
+      "status_seats_row1_right_heat": {
+        "name": "Front right seat heating"
+      },
+      "status_seats_row1_right_ventilation": {
+        "name": "Front right seat ventilation"
+      },
+      "status_seats_row2_left_heat": {
+        "name": "Rear left seat heating"
+      },
+      "status_seats_row2_left_ventilation": {
+        "name": "Rear left seat ventilation"
+      },
+      "status_seats_row2_right_heat": {
+        "name": "Rear right seat heating"
+      },
+      "status_seats_row2_right_ventilation": {
+        "name": "Rear right seat ventilation"
+      },
+      "status_steeringwheelheat": {
+        "name": "Steering wheel heating"
+      },
+      "status_sunroof": {
+        "name": "Sunroof"
+      },
+      "status_tire_row1_left": {
+        "name": "Front left tyre pressure"
+      },
+      "status_tire_row1_right": {
+        "name": "Front right tyre pressure"
+      },
+      "status_tire_row2_left": {
+        "name": "Rear left tyre pressure"
+      },
+      "status_tire_row2_right": {
+        "name": "Rear right tyre pressure"
+      },
+      "status_trunk": {
+        "name": "Boot"
+      },
+      "status_warnings": {
+        "name": "Warnings"
+      },
+      "status_windshield_defrost": {
+        "name": "Windscreen defrost"
+      },
+      "vehicle_information": {
+        "name": "Vehicle information"
+      }
+    },
+    "binary_sensor": {
+      "batteries_charge_charging": {
+        "name": "Charging"
+      },
+      "batteries_charge_plugin": {
+        "name": "Plugged in"
+      },
+      "driving_transmission_parkingposition": {
+        "name": "In park"
+      }
+    },
+    "device_tracker": {
+      "location": {
+        "name": "Location"
       }
     }
   }

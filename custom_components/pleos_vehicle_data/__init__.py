@@ -4,7 +4,9 @@ from homeassistant.const import Platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PleosClient
+from .archive import archive_store
 from .coordinator import PleosCoordinator
+from .trips import trip_store, window_store
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER]
 
@@ -21,3 +23,10 @@ async def async_setup_entry(hass, entry):
 
 async def async_unload_entry(hass, entry):
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass, entry):
+    # Forget which trips were announced and archived. The archive files themselves are kept.
+    await trip_store(hass, entry.entry_id).async_remove()
+    await window_store(hass, entry.entry_id).async_remove()
+    await archive_store(hass, entry.entry_id).async_remove()
