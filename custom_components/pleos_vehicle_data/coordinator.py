@@ -5,11 +5,15 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import ApiError, AuthError
-from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
-from .data import identifier, location, readings, reported_age, trip_readings, vehicle_id
+from .const import (BRANDS, DEFAULT_OPTIONS, DOMAIN, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS, TRIP_EVENT,
+                    TRIP_MEMORY_DAYS)
+from .data import (identifier, location, new_trips, prune_seen, readings, reported_age, trip_readings,
+                   vehicle_id)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,17 +25,50 @@ class PleosCoordinator(DataUpdateCoordinator):
         self.options = DEFAULT_OPTIONS | dict(entry.options)
         super().__init__(hass, LOGGER, config_entry=entry, name=BRANDS[self.brand],
                          update_interval=timedelta(minutes=self.options["poll_minutes"]))
+        # Trip start times already announced, per car and endpoint, kept across restarts.
+        self.trip_store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips")
+        self.seen_trips = None
+
+    async def _load_seen_trips(self):
+        if self.seen_trips is None:
+            stored = await self.trip_store.async_load()
+            self.seen_trips = stored if isinstance(stored, dict) else {}
+        return self.seen_trips
+
+    async def _announce_trips(self, pending):
+        """Fire one event per new trip, oldest first, then remember them."""
+        seen = await self._load_seen_trips()
+        devices = dr.async_get(self.hass) if pending else None
+        for car_id, endpoint, trip in pending:
+            device = devices.async_get_device_by_identifier((DOMAIN, car_id), self.config_entry.entry_id)
+            self.hass.bus.async_fire(TRIP_EVENT, {
+                "vehicle_id": car_id, "device_id": device.id if device else None, "brand": self.brand,
+                "endpoint": endpoint, "trip_start": trip["triggerStartTime"],
+                "trip_length_ms": trip.get("tripLength"), "trip": trip,
+            })
+            seen.setdefault(car_id, {}).setdefault(endpoint, []).append(trip["triggerStartTime"])
+        max_age = TRIP_MEMORY_DAYS * 86400
+        pruned = {car_id: {endpoint: kept for endpoint, starts in endpoints.items()
+                           if (kept := prune_seen(starts, max_age))}
+                  for car_id, endpoints in seen.items()}
+        pruned = {car_id: endpoints for car_id, endpoints in pruned.items() if endpoints}
+        if pending or pruned != seen:
+            self.seen_trips = pruned
+            await self.trip_store.async_save(pruned)
 
     async def _async_update_data(self):
         try:
             vehicles = await self.client.vehicles()
+            seen = await self._load_seen_trips() if self.options["trip_events"] else {}
+            pending = []
             result = {"status": "connected" if vehicles else "no_vehicles", "cars": {}}
             now = datetime.now(timezone.utc)
             date_range = {"startDate": (now - timedelta(days=1)).strftime("%Y%m%d"),
                           "endDate": now.strftime("%Y%m%d"), "zoneId": "UTC"}
             for vehicle in vehicles:
                 car = {"vehicle": vehicle, "readings": {}, "sources": {}, "location": None}
-                result["cars"][vehicle_id(self.brand, vehicle["vin"])] = car
+                car_id = vehicle_id(self.brand, vehicle["vin"])
+                result["cars"][car_id] = car
                 car["readings"]["vehicle_information"] = {
                     "name": "Vehicle information", "value": vehicle.get("type") or "UNKNOWN", "domain": "sensor",
                     "entity_category": "diagnostic", "source": "vehicles",
@@ -72,6 +109,9 @@ class PleosCoordinator(DataUpdateCoordinator):
                     stamp = data.get("timestamp") if isinstance(data, dict) else None
                     if endpoint in TRIP_ENDPOINTS:
                         current, start = trip_readings(endpoint, data)
+                        if self.options["trip_events"]:
+                            known = set(seen.get(car_id, {}).get(endpoint, ()))
+                            pending.extend((car_id, endpoint, trip) for trip in new_trips(data, known))
                         car["sources"][endpoint] = start
                         car["readings"].update({key: value | {"source": endpoint} for key, value in current.items()})
                         trips = data.get("trips") if isinstance(data, dict) else None
@@ -95,6 +135,9 @@ class PleosCoordinator(DataUpdateCoordinator):
                                 "domain": "sensor", "source": endpoint,
                                 "entity_category": "diagnostic",
                             }
+            if self.options["trip_events"]:
+                # Announce only after every car was read, so a failed poll cannot mark trips as seen.
+                await self._announce_trips(pending)
             return result
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None

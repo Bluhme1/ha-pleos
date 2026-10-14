@@ -57,10 +57,12 @@
         "data": {
           "poll_minutes": "Polling interval",
           "stale_minutes": "Stale-data threshold",
-          "location": "Enable location data and GPS tracking"
+          "location": "Enable location data and GPS tracking",
+          "trip_events": "Fire an event for each new trip"
         },
         "data_description": {
-          "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates."
+          "location": "Queries the location endpoint and exposes its data. A map tracker is created only for valid WGS84 coordinates.",
+          "trip_events": "Fires pleos_vehicle_data_trip once per trip with every sample the API returned. Large trips can be excluded from the recorder."
         }
       }
     }
