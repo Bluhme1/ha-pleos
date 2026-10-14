@@ -107,41 +107,41 @@ Compared with kia_uvo 3.17.1 (library 4.35.2) on 14 October 2026.
 
 ### Data
 
-✔ available · ◐ partial · ✖ not available
+✅ available · 🟡 partial · ❌ not available
 
 | Data | Pleos | kia_uvo |
 | --- | :---: | :---: |
-| State of charge, range, odometer, fuel level | ✔ | ✔ |
-| Range for each powertrain (ICE, EV, HEV, PHEV, hydrogen) | ✔ | ◐ EV, fuel and total |
-| Charging, plugged in, charge limits, time remaining | ✔ | ✔ |
-| Charging status including V2L | ✔ | ◐ V2L and V2X flags |
-| Charging power and current | ✖ | ✔ |
-| 12 V battery level and warning | ✖ | ✔ |
-| Battery state of health, remaining energy | ✖ | ✔ |
-| Battery temperatures, chiller, preconditioning, winter mode (newer cars) | ✖ | ✔ |
-| Charge port door, charging and departure schedules | ✖ | ✔ |
-| Energy consumed and regenerated, 30-day and daily statistics | ✖ | ✔ |
-| Location (latitude, longitude) | ✔ | ✔ |
-| Altitude, heading, speed | ✔ | ✖ |
-| Doors and locks, bonnet, boot, sunroof | ✔ | ✔ |
-| Windows | ✖ | ✔ |
-| Tyre pressures | ✔ | ✔ |
-| Tyre pressure warnings | ✖ | ✔ |
-| Climate state and target temperature | ✔ | ✔ |
-| Climate mode and cabin fan speed | ✔ | ✖ |
-| Seat heating, steering wheel heating, defrost | ✔ | ✔ |
-| Seat ventilation | ✔ | ◐ in seat status |
-| Mirror and rear window heating | ✖ | ✔ |
-| Ignition, accessory and high-voltage power states, sleep mode | ✔ | ◐ no ign1 |
-| Warnings | ◐ list (such as washer fluid, low fuel) | ✔ individual warnings |
-| Lights (turn signals, brake lights, headlights) | ◐ light switch setting during trips | ✔ |
-| Service intervals, fault code count | ✖ | ✔ |
-| Reporting time and data age for each data group | ✔ | ◐ last updated, location updated |
-| Trip summaries (distance, duration) | ✔ | ◐ in the library, daily statistics in HA |
-| Trip sample series (wheel speeds, RPM, HV voltage, acceleration, yaw, steering, gear, seat belts) | ✔ | ✖ |
-| Trip events with every sample, per-trip min, max and mean | ✔ | ✖ |
-| Freezer (Kia PV5) | ✔ | ✖ |
-| 360° camera images | ✖ | ✔ Hyundai |
+| State of charge, range, odometer, fuel level | ✅ | ✅ |
+| Range for each powertrain (ICE, EV, HEV, PHEV, hydrogen) | ✅ | 🟡 EV, fuel and total |
+| Charging, plugged in, charge limits, time remaining | ✅ | ✅ |
+| Charging status including V2L | ✅ | 🟡 V2L and V2X flags |
+| Charging power and current | ❌ | ✅ |
+| 12 V battery level and warning | ❌ | ✅ |
+| Battery state of health, remaining energy | ❌ | ✅ |
+| Battery temperatures, chiller, preconditioning, winter mode (newer cars) | ❌ | ✅ |
+| Charge port door, charging and departure schedules | ❌ | ✅ |
+| Energy consumed and regenerated, 30-day and daily statistics | ❌ | ✅ |
+| Location (latitude, longitude) | ✅ | ✅ |
+| Altitude, heading, speed | ✅ | ❌ |
+| Doors and locks, bonnet, boot, sunroof | ✅ | ✅ |
+| Windows | ❌ | ✅ |
+| Tyre pressures | ✅ | ✅ |
+| Tyre pressure warnings | ❌ | ✅ |
+| Climate state and target temperature | ✅ | ✅ |
+| Climate mode and cabin fan speed | ✅ | ❌ |
+| Seat heating, steering wheel heating, defrost | ✅ | ✅ |
+| Seat ventilation | ✅ | 🟡 in seat status |
+| Mirror and rear window heating | ❌ | ✅ |
+| Ignition, accessory and high-voltage power states, sleep mode | ✅ | 🟡 no ign1 |
+| Warnings | 🟡 list (such as washer fluid, low fuel) | ✅ individual warnings |
+| Lights (turn signals, brake lights, headlights) | 🟡 light switch setting during trips | ✅ |
+| Service intervals, fault code count | ❌ | ✅ |
+| Reporting time and data age for each data group | ✅ | 🟡 last updated, location updated |
+| Trip summaries (distance, duration) | ✅ | 🟡 in the library, daily statistics in HA |
+| Trip sample series (wheel speeds, RPM, HV voltage, acceleration, yaw, steering, gear, seat belts) | ✅ | ❌ |
+| Trip events with every sample, per-trip min, max and mean | ✅ | ❌ |
+| Freezer (Kia PV5) | ✅ | ❌ |
+| 360° camera images | ❌ | ✅ Hyundai |
 
 Availability depends on the vehicle, model year and region in both integrations.
 
