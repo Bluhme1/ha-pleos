@@ -315,6 +315,27 @@ def trip_readings(endpoint, data):
             value = value.get(part) if isinstance(value, dict) else None
         return value if isinstance(value, list) else []
 
+    def numeric_sample(field, spec, index):
+        """Return one valid sample as (value, unit), converted like the last-sample sensor."""
+        values = samples(field)
+        value = values[index] if 0 <= index < len(values) else None
+        low, high, unit, _ = spec
+        if not finite_number(value) or not low <= value <= high:
+            return None
+        if field == "location.speed":
+            units = samples("location.speedUnit")
+            unit = UNITS.get(units[index]) if len(units) > index and units[index] in ("kph", "mph") else None
+            if unit is None:
+                return None
+        elif field.startswith("tire.pressure"):
+            units = samples("tire.pressureUnit")
+            raw_unit = units[index] if len(units) > index else None
+            if raw_unit not in ("psi", "kpa", "bar"):
+                return None
+            unit = UNITS[raw_unit]
+            value = value * 5 if raw_unit == "kpa" else value / 10 if raw_unit == "bar" else value
+        return value, unit
+
     for field, spec in TRIP_FIELDS[endpoint].items():
         values = samples(field)
         if not values or values[-1] is None or values[-1] == "invalid":
@@ -327,25 +348,34 @@ def trip_readings(endpoint, data):
             if not isinstance(value, str) or len(value) > 255:
                 continue
         else:
-            low, high, unit, device_class = spec
-            if not finite_number(value) or not low <= value <= high:
+            last = numeric_sample(field, spec, index)
+            if last is None:
                 continue
-            if field == "location.speed":
-                units = samples("location.speedUnit")
-                unit = UNITS.get(units[index]) if len(units) > index and units[index] in ("kph", "mph") else None
-                if unit is None:
-                    continue
-            elif field.startswith("tire.pressure"):
-                units = samples("tire.pressureUnit")
-                raw_unit = units[index] if len(units) > index else None
-                if raw_unit not in ("psi", "kpa", "bar"):
-                    continue
-                unit = UNITS[raw_unit]
-                reading["value"] = value * 5 if raw_unit == "kpa" else value / 10 if raw_unit == "bar" else value
+            reading["value"], unit = last
+            # Summarise every valid sample of the trip in the last sample's unit.
+            valid = [sample[0] for i in range(len(values))
+                     if (sample := numeric_sample(field, spec, i)) is not None and sample[1] == unit]
+            reading["attributes"].update(
+                trip_min=min(valid), trip_max=max(valid), trip_mean=round(sum(valid) / len(valid), 3),
+                valid_samples=len(valid), total_samples=len(values),
+            )
             reading["state_class"] = "measurement"
             if unit:
                 reading["unit_of_measurement"] = unit
-            if device_class:
-                reading["device_class"] = device_class
+            if spec[3]:
+                reading["device_class"] = spec[3]
         result[prefix + "_" + identifier(field)] = reading
+
+    if endpoint == "driving/data":
+        spec = TRIP_FIELDS[endpoint]["odometer.value"]
+        mileage = [sample[0] for i in range(len(samples("odometer.value")))
+                   if (sample := numeric_sample("odometer.value", spec, i)) is not None]
+        if len(mileage) >= 2 and mileage[-1] >= mileage[0]:
+            result[prefix + "_trip_distance"] = {
+                "name": "Trip distance (last trip)", "value": round(mileage[-1] - mileage[0], 1),
+                "unit_of_measurement": "km", "device_class": "distance", "state_class": "measurement",
+                "domain": "sensor", "historical": True,
+                "attributes": {"trip_start": start, "trip_length_ms": length,
+                               "odometer_start": mileage[0], "odometer_end": mileage[-1]},
+            }
     return result, start

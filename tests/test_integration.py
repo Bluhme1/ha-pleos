@@ -118,6 +118,46 @@ class DataTests(unittest.TestCase):
         self.assertNotIn("speed_location_speed", speeds)
 
 
+class TripAggregateTests(unittest.TestCase):
+    def trip(self, **fields):
+        return {"trips": [{"triggerStartTime": stamp(60), "tripLength": 60000, **fields}]}
+
+    def test_numeric_fields_get_min_max_mean_of_valid_samples(self):
+        data = self.trip(engine={"rpm": [800, "invalid", None, 99999, 3000, 1600], "oilTemperature": [80]})
+        attrs = trip_readings("powertrains/data", data)[0]["powertrains_data_engine_rpm"]["attributes"]
+        self.assertEqual((attrs["trip_min"], attrs["trip_max"], attrs["trip_mean"]), (800, 3000, 1800))
+        self.assertEqual((attrs["valid_samples"], attrs["total_samples"]), (3, 6))
+        oil = trip_readings("powertrains/data", data)[0]["powertrains_data_engine_oiltemperature"]["attributes"]
+        self.assertEqual((oil["trip_min"], oil["trip_max"], oil["valid_samples"]), (80, 80, 1))
+
+    def test_aggregates_use_converted_values_in_the_last_samples_unit(self):
+        data = self.trip(tire={"pressureFrontLeft": [70, 72, 36], "pressureUnit": ["kpa", "kpa", "psi"]},
+                         location={"speed": [50, 100, 30, 60], "speedUnit": ["kph", "mph", "kph", "kph"]})
+        tyre = trip_readings("status/data", data)[0]["status_data_tire_pressurefrontleft"]
+        self.assertEqual(tyre["value"], 36)
+        self.assertEqual((tyre["attributes"]["trip_min"], tyre["attributes"]["valid_samples"]), (36, 1))
+        speed = trip_readings("speed", data)[0]["speed_location_speed"]["attributes"]
+        self.assertEqual((speed["trip_min"], speed["trip_max"], speed["trip_mean"], speed["valid_samples"]),
+                         (30, 60, 46.667, 3))
+        kpa = trip_readings("status/data", self.trip(tire={"pressureRearLeft": [70, 72], "pressureUnit": ["kpa", "kpa"]}))[0]
+        self.assertEqual(kpa["status_data_tire_pressurerearleft"]["attributes"]["trip_max"], 360)
+
+    def test_text_fields_have_no_aggregates(self):
+        data = self.trip(transmission={"gear": ["P", "D"]})
+        self.assertNotIn("trip_min", trip_readings("driving/data", data)[0]["driving_data_transmission_gear"]["attributes"])
+
+    def test_trip_distance_from_first_and_last_valid_odometer_samples(self):
+        data = self.trip(odometer={"value": ["invalid", 1200.5, 1203.0, None, 1212.8, "invalid"]})
+        result = trip_readings("driving/data", data)[0]
+        distance = result["driving_data_trip_distance"]
+        self.assertEqual((distance["value"], distance["unit_of_measurement"]), (12.3, "km"))
+        self.assertEqual((distance["attributes"]["odometer_start"], distance["attributes"]["odometer_end"]), (1200.5, 1212.8))
+        self.assertTrue(distance["historical"])
+        self.assertNotIn("driving_data_odometer_value", result)
+        for odometer in ([1200], [1210, 1200], []):
+            self.assertNotIn("driving_data_trip_distance", trip_readings("driving/data", self.trip(odometer={"value": odometer}))[0])
+
+
 class TripEventDataTests(unittest.TestCase):
     def test_new_trips_skips_seen_invalid_and_duplicate_starts_in_order(self):
         older, newer = stamp(300), stamp(60)
