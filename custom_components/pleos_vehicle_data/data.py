@@ -266,6 +266,27 @@ TRIP_FIELDS = {
 }
 
 
+def new_trips(data, seen):
+    """Return valid trips whose start time is not in `seen`, oldest first."""
+    trips = data.get("trips") if isinstance(data, dict) else None
+    if not isinstance(trips, list):
+        return []
+    fresh = {}
+    for trip in trips:
+        if not isinstance(trip, dict) or reported_age(trip.get("triggerStartTime")) is None:
+            continue
+        start = trip["triggerStartTime"]
+        if start not in seen:
+            # A start time identifies a trip; keep the first copy if the API repeats one.
+            fresh.setdefault(start, trip)
+    return sorted(fresh.values(), key=lambda t: datetime.fromisoformat(t["triggerStartTime"].replace("Z", "+00:00")))
+
+
+def prune_seen(starts, max_age):
+    """Drop remembered trip starts older than `max_age` seconds, or ones no longer parseable."""
+    return sorted(start for start in starts if (age := reported_age(start)) is not None and age <= max_age)
+
+
 def trip_readings(endpoint, data):
     """Expose the latest trip's last samples; the API does not supply sample times."""
     trips = data.get("trips") if isinstance(data, dict) else None

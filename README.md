@@ -39,6 +39,32 @@ Each endpoint has an **API diagnostic sensor** showing `available`, `no_data`, `
 
 Trip queries cover **yesterday and today in UTC**. Full returned trips remain in the diagnostic sensor's `data` attribute. Individual trip sensors show the latest trip's final sample when valid, with trip start, duration and sample index. Invalid final samples are omitted rather than replaced by older readings. Pleos does not document individual sample timestamps, so none are invented. Trip readings are historical and are labelled separately from current-status snapshots.
 
+### Trip events
+
+Each new trip fires a `pleos_vehicle_data_trip` event once, carrying every sample the API returned for it. Use it in automations or to export complete trips, for example to InfluxDB through Node-RED or AppDaemon. Event data:
+
+| Key | Content |
+| --- | --- |
+| `vehicle_id` | Stable vehicle ID used by this integration (not the VIN) |
+| `device_id` | Home Assistant device, once the vehicle's device exists |
+| `brand` | `hyundai`, `kia` or `genesis` |
+| `endpoint` | `powertrains/data`, `speed`, `driving/data` or `status/data` |
+| `trip_start`, `trip_length_ms` | Trip start time and duration as returned |
+| `trip` | The complete trip object, including all sample arrays |
+
+A trip is identified by its start time per vehicle and endpoint, so each endpoint announces it separately. Announced trips are remembered across restarts for four days. Trips arriving late within the two-day query window are still announced. Events are fired only after a complete poll, so a failed poll never marks a trip as announced. On first setup, trips already in the query window are announced once.
+
+The recorder stores events, including their sample arrays. To keep them out of the database, add this to `configuration.yaml`:
+
+```yaml
+recorder:
+  exclude:
+    event_types:
+      - pleos_vehicle_data_trip
+```
+
+Trip events can be turned off in the integration options.
+
 Snapshot endpoints have reporting-time and data-age sensors when a valid vehicle timestamp is supplied. Valid last-reported values, including location, stay visible while the car is parked. Their `reported_at`, `data_age_minutes` and `data_stale` attributes show how old they are; they do not imply the car just uploaded new data. The location option disables both the location request and GPS tracking.
 
 Entities use descriptive names such as **AC charge limit**, **Cabin fan speed** and **Front left seat heating**. Trip readings include **(last trip)** in their names. Updating display names preserves existing entity IDs and any names you have customised.

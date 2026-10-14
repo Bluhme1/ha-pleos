@@ -11,4 +11,7 @@ ENDPOINT_NAMES = {
     "powertrains/data": "Powertrain trips", "speed": "Speed trips",
     "driving/data": "Driving trips", "status/data": "Vehicle status trips",
 }
-DEFAULT_OPTIONS = {"poll_minutes": 15, "stale_minutes": 60, "location": True}
+DEFAULT_OPTIONS = {"poll_minutes": 15, "stale_minutes": 60, "location": True, "trip_events": True}
+TRIP_EVENT = DOMAIN + "_trip"
+# Trip queries cover two UTC days; keep seen trips a little longer so none are announced twice.
+TRIP_MEMORY_DAYS = 4

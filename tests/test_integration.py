@@ -13,13 +13,14 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.helpers import device_registry, entity_registry
 
-from custom_components.pleos_vehicle_data import async_setup_entry
+from custom_components.pleos_vehicle_data import async_remove_entry, async_setup_entry
 from custom_components.pleos_vehicle_data.api import ApiError, AuthError, PleosClient
 from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySensor
 from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow, PleosOptionsFlow
-from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN, ENDPOINTS
+from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN, ENDPOINTS, TRIP_EVENT
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
-from custom_components.pleos_vehicle_data.data import TRIP_FIELDS, TRIP_NAMES, location, readings, trip_readings, vehicle_id
+from custom_components.pleos_vehicle_data.data import (TRIP_FIELDS, TRIP_NAMES, location, new_trips, prune_seen, readings,
+                                                      trip_readings, vehicle_id)
 from custom_components.pleos_vehicle_data.device_tracker import VehicleTracker
 from custom_components.pleos_vehicle_data.entity import discover
 from custom_components.pleos_vehicle_data.sensor import ConnectionSensor, ReadingSensor
@@ -117,6 +118,23 @@ class DataTests(unittest.TestCase):
         self.assertNotIn("speed_location_speed", speeds)
 
 
+class TripEventDataTests(unittest.TestCase):
+    def test_new_trips_skips_seen_invalid_and_duplicate_starts_in_order(self):
+        older, newer = stamp(300), stamp(60)
+        data = {"trips": [{"triggerStartTime": newer, "tripLength": 1}, {"triggerStartTime": older},
+                          {"triggerStartTime": newer, "tripLength": 2}, {"triggerStartTime": "not-a-time"},
+                          {"triggerStartTime": "2026-01-01T00:00:00"}, "junk", {"tripLength": 3}]}
+        self.assertEqual([trip["triggerStartTime"] for trip in new_trips(data, set())], [older, newer])
+        self.assertEqual(new_trips(data, set())[1]["tripLength"], 1)
+        self.assertEqual([trip["triggerStartTime"] for trip in new_trips(data, {older})], [newer])
+        self.assertEqual(new_trips(None, set()), [])
+        self.assertEqual(new_trips({"trips": "invalid"}, set()), [])
+
+    def test_prune_seen_keeps_recent_starts_only(self):
+        recent, old = stamp(60), stamp(60 * 24 * 5)
+        self.assertEqual(prune_seen([recent, old, "bad"], 4 * 86400), [recent])
+
+
 class NativeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -124,6 +142,9 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.hass.config_entries = config_entries.ConfigEntries(self.hass, {})
         self.entry = entry()
         self.hass.config_entries._entries[self.entry.entry_id] = self.entry
+        # Home Assistant always provides the device registry; trip events look devices up in it.
+        self.hass.data[device_registry.DATA_REGISTRY] = device_registry.DeviceRegistry(self.hass)
+        await device_registry.async_load(self.hass, load_empty=True)
         self.client = PleosClient(MagicMock(), **OLD)
         self.coordinator = PleosCoordinator(self.hass, self.entry, self.client)
         self.session_patch = patch("custom_components.pleos_vehicle_data.config_flow.async_get_clientsession", return_value=MagicMock())
@@ -466,6 +487,105 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ApiError):
             await self.client._request("/v1/auth/personal-token", self.client.credentials)
         self.assertFalse(self.client.session.request.call_args.kwargs["allow_redirects"])
+
+    def capture_trip_events(self):
+        events = []
+        self.addCleanup(self.hass.bus.async_listen(TRIP_EVENT, events.append))
+        return events
+
+    def serve_trips(self, *trips, endpoint="speed"):
+        payload = {"trips": list(trips)}
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: payload if f"/{endpoint}?" in path else None)
+        return payload
+
+    async def test_new_trips_fire_one_event_each_across_polls_and_restarts(self):
+        events = self.capture_trip_events()
+        first = {"triggerStartTime": stamp(240), "tripLength": 2000,
+                 "location": {"speed": [10, 20], "speedUnit": ["kph", "kph"]}}
+        second = {"triggerStartTime": stamp(120), "tripLength": 1000, "wheel": {"speedFrontLeft": [5]}}
+        self.serve_trips(second, first)
+        await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual([event.data["trip_start"] for event in events], [first["triggerStartTime"], second["triggerStartTime"]])
+        self.assertEqual(events[0].data["trip"], first)
+        self.assertEqual(events[0].data["trip_length_ms"], 2000)
+        self.assertEqual(events[0].data["endpoint"], "speed")
+        self.assertEqual(events[0].data["vehicle_id"], vehicle_id("kia", CAR["vin"]))
+        self.assertEqual(events[0].data["brand"], "kia")
+        self.assertNotIn(CAR["vin"], repr(events[0].data))
+
+        await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(len(events), 2)
+
+        # A restarted coordinator reads the stored starts instead of announcing the same trips again.
+        restarted = PleosCoordinator(self.hass, self.entry, self.client)
+        self.addAsyncCleanup(restarted.async_shutdown)
+        await restarted._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(len(events), 2)
+
+        third = {"triggerStartTime": stamp(10), "tripLength": 500}
+        self.serve_trips(first, second, third)
+        await restarted._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual([event.data["trip_start"] for event in events[2:]], [third["triggerStartTime"]])
+
+    async def test_trip_event_carries_device_id_when_registered(self):
+        events = self.capture_trip_events()
+        car_id = vehicle_id("kia", CAR["vin"])
+        device = device_registry.async_get(self.hass).async_get_or_create(
+            config_entry_id=self.entry.entry_id, identifiers={(DOMAIN, car_id)})
+        self.serve_trips({"triggerStartTime": stamp(30)})
+        await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(events[0].data["device_id"], device.id)
+
+    async def test_failed_poll_does_not_mark_trips_seen(self):
+        events = self.capture_trip_events()
+        trip = {"triggerStartTime": stamp(30)}
+        payload = {"trips": [trip]}
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: payload if "/speed?" in path
+                                    else (_ for _ in ()).throw(AuthError("expired")) if "/status/data?" in path else None)
+        with self.assertRaises(ConfigEntryAuthFailed):
+            await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(events, [])
+        self.serve_trips(trip)
+        await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(len(events), 1)
+
+    async def test_same_start_on_another_endpoint_is_a_separate_event(self):
+        events = self.capture_trip_events()
+        start = stamp(30)
+        payload = {"trips": [{"triggerStartTime": start}]}
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: payload if "/speed?" in path or "/driving/data?" in path else None)
+        await self.coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(sorted(event.data["endpoint"] for event in events), ["driving/data", "speed"])
+
+    async def test_removing_entry_forgets_announced_trips(self):
+        self.serve_trips({"triggerStartTime": stamp(30)})
+        await self.coordinator._async_update_data()
+        self.assertTrue(await self.coordinator.trip_store.async_load())
+        await async_remove_entry(self.hass, self.entry)
+        self.assertIsNone(await self.coordinator.trip_store.async_load())
+
+    async def test_trip_events_can_be_disabled(self):
+        events = self.capture_trip_events()
+        self.hass.config_entries.async_update_entry(self.entry, options={"trip_events": False})
+        coordinator = PleosCoordinator(self.hass, self.entry, self.client)
+        self.addAsyncCleanup(coordinator.async_shutdown)
+        self.serve_trips({"triggerStartTime": stamp(30), "location": {"speed": [10], "speedUnit": ["kph"]}})
+        result = await coordinator._async_update_data()
+        await self.hass.async_block_till_done()
+        self.assertEqual(events, [])
+        self.assertIn("speed_location_speed", next(iter(result["cars"].values()))["readings"])
+        self.assertIsNone(await coordinator.trip_store.async_load())
 
 
 if __name__ == "__main__":

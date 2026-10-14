@@ -2,8 +2,10 @@
 
 from homeassistant.const import Platform
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .api import PleosClient
+from .const import DOMAIN
 from .coordinator import PleosCoordinator
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER]
@@ -21,3 +23,8 @@ async def async_setup_entry(hass, entry):
 
 async def async_unload_entry(hass, entry):
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass, entry):
+    # Forget which trips were announced for this account.
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.trips").async_remove()
