@@ -201,6 +201,8 @@ class Rejections:
 
     def add(self, path, value, reason):
         path = ".".join(map(str, path)) if isinstance(path, tuple) else path
+        if isinstance(value, (int, float)) and (not finite_number(value) or isinstance(value, int) and not -(2**63) <= value < 2**63):
+            value = repr(value)[:100]
         self.count += 1
         if len(self.examples) < REJECTION_EXAMPLES:
             self.examples.append({"path": path, "value": value if isinstance(value, (str, int, float, bool)) else repr(value)[:100],

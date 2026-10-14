@@ -3,6 +3,8 @@
 import unittest
 from unittest.mock import AsyncMock
 
+from homeassistant.helpers.json import json_dumps
+
 from custom_components.pleos_vehicle_data.data import REJECTION_EXAMPLES, Rejections, readings, trip_readings, vehicle_id
 
 from support import CAR, HomeAssistantTestCase, stamp
@@ -25,7 +27,7 @@ class SnapshotRejectionTests(unittest.TestCase):
             ("status", {"hood": "x" * 300}, "hood", "x" * 100 + "…", "text longer than 255 characters"),
             ("status", {"odd": {"unit": 5, "value": 1}}, "odd.unit", 5, "unit is not text"),
             ("status", {"warnings": ["a", 1]}, "warnings", ["a", 1], "warnings must all be text"),
-            ("status", {"hood": float("inf")}, "hood", float("inf"), "not a finite number"),
+            ("status", {"hood": float("inf")}, "hood", "inf", "not a finite number"),
         ]
         for endpoint, payload, path, value, reason in cases:
             with self.subTest(path=path):
@@ -54,6 +56,14 @@ class SnapshotRejectionTests(unittest.TestCase):
 
     def test_without_a_collector_nothing_changes(self):
         self.assertEqual(readings("batteries", {"charge": {"stateOfCharge": 101}}, "EV"), {})
+
+    def test_rejected_numbers_remain_serializable_by_home_assistant(self):
+        for value in (10**30, 10**400, float("inf"), float("nan")):
+            with self.subTest(value=repr(value)[:30]):
+                rejections = self.rejected("batteries", {"charge": {"stateOfCharge": value}})
+                self.assertEqual(rejections.count, 1)
+                self.assertIsInstance(rejections.examples[0]["value"], str)
+                self.assertIn("rejected_examples", json_dumps(rejections.attributes()))
 
 
 class TripRejectionTests(unittest.TestCase):
