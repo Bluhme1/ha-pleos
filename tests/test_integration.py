@@ -19,7 +19,7 @@ from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySens
 from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow, PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN, ENDPOINTS, TRIP_EVENT
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
-from custom_components.pleos_vehicle_data.data import (TRIP_FIELDS, TRIP_NAMES, location, new_trips, prune_seen, readings,
+from custom_components.pleos_vehicle_data.data import (TRIP_FIELDS, Spec, scale_pressure, snapshot_spec, TRIP_NAMES, location, new_trips, prune_seen, readings,
                                                       trip_readings, vehicle_id)
 from custom_components.pleos_vehicle_data.device_tracker import VehicleTracker
 from custom_components.pleos_vehicle_data.entity import discover
@@ -156,6 +156,27 @@ class TripAggregateTests(unittest.TestCase):
         self.assertNotIn("driving_data_odometer_value", result)
         for odometer in ([1200], [1210, 1200], []):
             self.assertNotIn("driving_data_trip_distance", trip_readings("driving/data", self.trip(odometer={"value": odometer}))[0])
+
+
+class SpecTests(unittest.TestCase):
+    def test_check_validates_range_units_type_and_converts(self):
+        tyre = Spec(0, 254, units=("psi", "kpa", "bar"), convert=scale_pressure)
+        self.assertEqual((tyre.check(72, "kpa"), tyre.check(36, "bar"), tyre.check(35, "psi")), (360, 3.6, 35))
+        for value, unit in ((255, "psi"), (30, "furlong"), (True, "psi"), ("30", "psi"), (float("inf"), "psi")):
+            self.assertIsNone(tyre.check(value, unit))
+        self.assertEqual(Spec(1, 10, numeric_text=True).check("4", None), 4.0)
+        self.assertIsNone(Spec(1, 10, numeric_text=True).check("nan", None))
+        self.assertIsNone(Spec(-1, 8, integer=True).check(2.5, None))
+        enum = Spec(0, 2, integer=True, options=("a", "b", "c"))
+        self.assertEqual((enum.check(1, None), enum.metadata()), ("b", {"device_class": "enum", "options": ["a", "b", "c"]}))
+        self.assertEqual(Spec(0, 1, unit="%", device_class="battery").metadata(), {"unit_of_measurement": "%", "device_class": "battery"})
+
+    def test_snapshot_spec_scopes_by_endpoint_and_path(self):
+        self.assertEqual(snapshot_spec("status", ("tire", "row1", "left")).device_class, "pressure")
+        self.assertIsNone(snapshot_spec("driving", ("tire", "row1", "left")))
+        self.assertEqual(snapshot_spec("batteries", ("charge", "targetStateOfCharge", "quick")).unit, "%")
+        self.assertEqual(snapshot_spec("powertrains", ("engine", "fuelLevel")).device_class, None)
+        self.assertIsNone(snapshot_spec("status", ("hood",)))
 
 
 class WarningListTests(unittest.TestCase):

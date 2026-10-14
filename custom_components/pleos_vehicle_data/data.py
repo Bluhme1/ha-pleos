@@ -3,6 +3,8 @@
 import hashlib
 import math
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .const import ENDPOINT_NAMES
@@ -90,6 +92,95 @@ def finite_number(value):
         return False
 
 
+def scale_pressure(value, unit):
+    """Pleos reports kPa in steps of 5 and bar in tenths; psi is reported as is."""
+    return value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
+
+
+@dataclass(frozen=True)
+class Spec:
+    """Validation and Home Assistant metadata for one documented numeric field."""
+
+    low: float
+    high: float
+    units: tuple | None = None  # Accepted raw units; None accepts any.
+    unit: str | None = None  # Fixed Home Assistant unit, replacing the raw one.
+    device_class: str | None = None
+    state_class: str | None = None  # Replaces the default "measurement" when set.
+    integer: bool = False
+    numeric_text: bool = False  # Also accept numbers sent as strings; the value becomes a float.
+    convert: Callable | None = None  # convert(value, raw_unit) after validation.
+    options: tuple | None = None  # Enum: the value is an index into these options.
+    unit_field: str | None = None  # Trips: the sample array holding each sample's raw unit.
+
+    def check(self, value, raw_unit):
+        """Return the validated, converted value, or None when it must be dropped."""
+        if isinstance(value, bool):
+            return None
+        if self.numeric_text and isinstance(value, (str, int, float)):
+            try:
+                value = float(value)
+            except (ValueError, TypeError, OverflowError):
+                return None
+        if not finite_number(value) or not self.low <= value <= self.high:
+            return None
+        if self.units is not None and raw_unit not in self.units:
+            return None
+        if self.integer and not isinstance(value, int):
+            return None
+        if self.convert:
+            value = self.convert(value, raw_unit)
+        return self.options[value] if self.options else value
+
+    def metadata(self):
+        if self.options:
+            return {"device_class": "enum", "options": list(self.options)}
+        return {key: value for key, value in (("unit_of_measurement", self.unit), ("device_class", self.device_class),
+                                              ("state_class", self.state_class)) if value}
+
+
+def exact(*paths):
+    return lambda path: path in paths
+
+
+def prefix(*parts):
+    return lambda path: path[:len(parts)] == parts
+
+
+def last(*names):
+    return lambda path: path[-1] in names
+
+
+PERCENT = Spec(0, 100, unit="%", device_class="battery")
+# Documented snapshot fields: (endpoint or None for any, path matcher, spec). The first match applies.
+SNAPSHOT_FIELDS = (
+    ("status", prefix("tire"), Spec(0, 254, units=("psi", "kpa", "bar"), convert=scale_pressure,
+                                     device_class="pressure")),
+    (None, last("stateOfCharge", "remainRatio"), PERCENT),
+    (None, prefix("charge", "targetStateOfCharge"), PERCENT),
+    (None, last("fuelLevel"), Spec(0, 100, unit="%")),
+    (None, exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration")),
+    ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "miles"),
+                                                      numeric_text=True, device_class="distance")),
+    ("driving", exact(("odometer",)), Spec(0, 16777214, units=("km", "mile", "meter", "feet"),
+                                           device_class="distance", state_class="total_increasing")),
+    ("status", exact(("climateControl", "temperature"), ("outsideTemperature",)), Spec(-100, 100, units=("C", "F"))),
+    ("status", exact(("climateControl", "speed")), Spec(-1, 8, integer=True)),
+    ("freezer", exact(("freezer", "temperature")), Spec(-40, 62.3, unit="°C", device_class="temperature")),
+    ("locations", last("latitude"), Spec(-90, 90, unit="°")),
+    ("locations", last("longitude"), Spec(-180, 180, unit="°")),
+    ("locations", last("heading"), Spec(0, 359, unit="°")),
+    ("locations", last("altitude"), Spec(-100, 10000, unit="m", device_class="distance")),
+    ("locations", last("speed"), Spec(0, 1000, units=("kph", "mph", "mps"), device_class="speed")),
+    ("locations", last("type"), Spec(0, 2, integer=True, options=("WGS84", "Bessel", "CoordShift"))),
+)
+
+
+def snapshot_spec(endpoint, path):
+    return next((spec for scope, matches, spec in SNAPSHOT_FIELDS
+                 if scope in (None, endpoint) and matches(path)), None)
+
+
 def readings(endpoint, data, vehicle_type):
     """Keep unknown fields as plain sensors; apply only documented semantics."""
     result = {}
@@ -127,77 +218,24 @@ def readings(endpoint, data, vehicle_type):
             return
         if endpoint == "powertrains" and path == ("engine", "fuelLevel") and vehicle_type in ("EV", "FV"):
             return
-        opts = {}
-        domain = "sensor"
+        spec = snapshot_spec(endpoint, path)
+        if spec:
+            value = spec.check(value, unit)
+            if value is None:
+                return
         numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if numeric and not finite_number(value):
+            return
+        opts = {}
         if numeric:
-            if not finite_number(value):
-                return
             opts["state_class"] = "measurement"
-        if endpoint == "status" and path[0] == "tire":
-            if not numeric or not 0 <= value <= 254 or unit not in ("psi", "kpa", "bar"):
-                return
-            value = value * 5 if unit == "kpa" else value / 10 if unit == "bar" else value
-            opts["device_class"] = "pressure"
-        if unit in UNITS and numeric:
-            opts["unit_of_measurement"] = UNITS[unit]
-            if unit in ("C", "F"):
-                opts["device_class"] = "temperature"
-        if path[-1] in ("stateOfCharge", "remainRatio", "fuelLevel") or path[:2] == ("charge", "targetStateOfCharge"):
-            if not numeric or not 0 <= value <= 100:
-                return
-            opts["unit_of_measurement"] = "%"
-            if path[-1] != "fuelLevel":
-                opts["device_class"] = "battery"
-        if path == ("charge", "remainTime"):
-            if not numeric or not 0 <= value <= 65535:
-                return
-            opts.update(unit_of_measurement="min", device_class="duration")
-        if endpoint == "powertrains" and path[0] == "distanceToEmpties":
-            if isinstance(value, bool):
-                return
-            try:
-                value = float(value)
-            except (ValueError, TypeError):
-                return
-            if not math.isfinite(value) or not 1 <= value <= 4095 or unit not in ("feet", "km", "meter", "miles"):
-                return
-            opts.update(unit_of_measurement=UNITS[unit], device_class="distance", state_class="measurement")
-        if endpoint == "driving" and path == ("odometer",):
-            if not numeric or not 0 <= value <= 16777214 or unit not in ("km", "mile", "meter", "feet"):
-                return
-            opts.update(device_class="distance", state_class="total_increasing")
-        if endpoint == "status" and path in (("climateControl", "temperature"), ("outsideTemperature",)):
-            if not numeric or not -100 <= value <= 100 or unit not in ("C", "F"):
-                return
-        if endpoint == "status" and path == ("climateControl", "speed"):
-            if not numeric or not isinstance(value, int) or not -1 <= value <= 8:
-                return
-        if endpoint == "freezer" and path == ("freezer", "temperature"):
-            if not numeric or not -40 <= value <= 62.3:
-                return
-            opts.update(unit_of_measurement="°C", device_class="temperature")
-        if endpoint == "locations":
-            limits = {"latitude": (-90, 90), "longitude": (-180, 180), "altitude": (-100, 10000),
-                      "heading": (0, 359), "speed": (0, 1000), "type": (0, 2)}
-            field = path[-1]
-            if field in limits:
-                if not numeric or not limits[field][0] <= value <= limits[field][1]:
-                    return
-                if field == "type":
-                    if not isinstance(value, int):
-                        return
-                    systems = ["WGS84", "Bessel", "CoordShift"]
-                    value = systems[value]
-                    opts = {"device_class": "enum", "options": systems}
-                elif field in ("latitude", "longitude", "heading"):
-                    opts["unit_of_measurement"] = "°"
-                elif field == "altitude":
-                    opts.update(unit_of_measurement="m", device_class="distance")
-                elif field == "speed":
-                    if unit not in ("kph", "mph", "mps"):
-                        return
-                    opts["device_class"] = "speed"
+            if unit in UNITS:
+                opts["unit_of_measurement"] = UNITS[unit]
+                if unit in ("C", "F"):
+                    opts["device_class"] = "temperature"
+        if spec:
+            opts = spec.metadata() if spec.options else opts | spec.metadata()
+        domain = "sensor"
         if path == ("charge", "plugin"):
             if value not in ("connected", "disconnected"):
                 return
@@ -231,40 +269,42 @@ def location(data):
     return point if -90 <= lat <= 90 and -180 <= lon <= 180 else None
 
 
-# Paths, ranges and units from the four Pleos trip-data response schemas.
+# Paths, ranges and units from the four Pleos trip-data response schemas. None marks a text field.
+SPEED_SAMPLE = Spec(0, 254, units=("kph", "mph"), unit_field="location.speedUnit", device_class="speed")
+TYRE_SAMPLE = Spec(0, 254, units=("psi", "kpa", "bar"), unit_field="tire.pressureUnit", convert=scale_pressure,
+                   device_class="pressure")
 TRIP_FIELDS = {
     "powertrains/data": {
-        "batteries.hv.voltage": (0, 6553, "V", "voltage"),
-        "engine.oilTemperature": (0, 150.5, "°C", "temperature"),
-        "engine.rpm": (0, 16383.5, "rpm", None),
+        "batteries.hv.voltage": Spec(0, 6553, unit="V", device_class="voltage"),
+        "engine.oilTemperature": Spec(0, 150.5, unit="°C", device_class="temperature"),
+        "engine.rpm": Spec(0, 16383.5, unit="rpm"),
     },
     "speed": {
-        "location.speed": (0, 254, None, "speed"),
+        "location.speed": SPEED_SAMPLE,
         "location.speedUnit": None,
-        **{f"wheel.speed{side}": (0, 511.9375, "km/h", "speed")
+        **{f"wheel.speed{side}": Spec(0, 511.9375, unit="km/h", device_class="speed")
            for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
     },
     "driving/data": {
         "ignition.status": None,
-        "odometer.value": (0, 1677721.4, "km", "distance"),
-        "acceleration.longitudinal": (-4.177, 4.177, "g", None),
-        "angularVelocity.yaw": (-40.95, 40.95, "°/s", None),
+        "odometer.value": Spec(0, 1677721.4, unit="km", device_class="distance"),
+        "acceleration.longitudinal": Spec(-4.177, 4.177, unit="g"),
+        "angularVelocity.yaw": Spec(-40.95, 40.95, unit="°/s"),
         "isla.optionUsm": None,
         "isla.optionUsm2": None,
         "seatbelt.assistance": None,
         "seatbelt.driver": None,
-        "steeringWheel.angle": (-3276.8, 3276.7, "°", None),
-        "steeringWheel.rotationSpeed": (0, 1016, "°/s", None),
+        "steeringWheel.angle": Spec(-3276.8, 3276.7, unit="°"),
+        "steeringWheel.rotationSpeed": Spec(0, 1016, unit="°/s"),
         "transmission.gear": None,
     },
     "status/data": {
         **{f"doors.open{side}": None for side in ("Assistance", "Driver", "RearLeft", "RearRight")},
         "lamp.setting": None,
-        **{f"tire.pressure{side}": (0, 254, None, "pressure")
-           for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
+        **{f"tire.pressure{side}": TYRE_SAMPLE for side in ("FrontLeft", "FrontRight", "RearLeft", "RearRight")},
         "tire.pressureUnit": None,
         "warnings.lowFuelLevel": None,
-        "outsideTemperature.value": (-40, 60, "°C", "temperature"),
+        "outsideTemperature.value": Spec(-40, 60, unit="°C", device_class="temperature"),
     },
 }
 
@@ -321,23 +361,10 @@ def trip_readings(endpoint, data):
     def numeric_sample(field, spec, index):
         """Return one valid sample as (value, unit), converted like the last-sample sensor."""
         values = samples(field)
-        value = values[index] if 0 <= index < len(values) else None
-        low, high, unit, _ = spec
-        if not finite_number(value) or not low <= value <= high:
-            return None
-        if field == "location.speed":
-            units = samples("location.speedUnit")
-            unit = UNITS.get(units[index]) if len(units) > index and units[index] in ("kph", "mph") else None
-            if unit is None:
-                return None
-        elif field.startswith("tire.pressure"):
-            units = samples("tire.pressureUnit")
-            raw_unit = units[index] if len(units) > index else None
-            if raw_unit not in ("psi", "kpa", "bar"):
-                return None
-            unit = UNITS[raw_unit]
-            value = value * 5 if raw_unit == "kpa" else value / 10 if raw_unit == "bar" else value
-        return value, unit
+        units = samples(spec.unit_field) if spec.unit_field else []
+        raw_unit = units[index] if spec.unit_field and 0 <= index < len(units) else None
+        value = spec.check(values[index] if 0 <= index < len(values) else None, raw_unit)
+        return None if value is None else (value, spec.unit or UNITS.get(raw_unit))
 
     for field, spec in TRIP_FIELDS[endpoint].items():
         values = samples(field)
@@ -365,8 +392,8 @@ def trip_readings(endpoint, data):
             reading["state_class"] = "measurement"
             if unit:
                 reading["unit_of_measurement"] = unit
-            if spec[3]:
-                reading["device_class"] = spec[3]
+            if spec.device_class:
+                reading["device_class"] = spec.device_class
         result[prefix + "_" + identifier(field)] = reading
 
     if endpoint == "driving/data":
