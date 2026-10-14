@@ -1,5 +1,7 @@
 # Pleos Vehicle Data
 
+Fork of [jouwdan/ha-pleos](https://github.com/jouwdan/ha-pleos) by @jouwdan, extended with a lossless response archive, trip catch-up after downtime, a recorded state for every trip, trip events, a diagnostics download and more.
+
 A native Home Assistant integration for the official Pleos **personal Vehicle Data API**. Supports Hyundai, Kia and Genesis accounts, with one integration entry per manufacturer and a device for each returned vehicle. Requires Home Assistant **2026.10 or later**.
 
 ## Supported vehicles
@@ -148,13 +150,13 @@ Availability depends on the vehicle, model year and region in both integrations.
 ## Install with HACS
 
 1. [Install and configure HACS](https://www.hacs.dev/docs/use/download/download/) if required.
-2. Open **HACS → ⋮ → Custom repositories**. Add `https://github.com/jouwdan/ha-pleos` with type **Integration**.
+2. Open **HACS → ⋮ → Custom repositories**. Add `https://github.com/isarrider/ha-pleos` with type **Integration**.
 3. Find **Pleos Vehicle Data**, download it, then restart Home Assistant.
 4. Complete the setup below. HACS manages later integration downloads and updates.
 
 ## Install without HACS
 
-1. Download the source ZIP from the [latest release](https://github.com/jouwdan/ha-pleos/releases/latest).
+1. Download the [source ZIP of the main branch](https://github.com/isarrider/ha-pleos/archive/refs/heads/main.zip).
 2. Extract it and copy `custom_components/pleos_vehicle_data` into your Home Assistant configuration directory's `custom_components` folder. The result must be `<config>/custom_components/pleos_vehicle_data/manifest.json`.
 3. Restart Home Assistant and complete the setup below. For updates, replace that integration directory with the new release and restart.
 
