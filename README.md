@@ -167,6 +167,15 @@ Availability depends on the vehicle, model year and region in both integrations.
 3. In Home Assistant, open **Settings → Devices & services → Add integration → Pleos Vehicle Data**. Select that manufacturer and enter both credentials. Setup validates them before saving.
 4. Add the car's entities to dashboards or automations. Repeat setup for another manufacturer if needed.
 
+## Example dashboard
+
+[`examples/dashboard.yaml`](examples/dashboard.yaml) is a ready-made dashboard for an electric car, using only built-in cards. It shows charge and range gauges, charging state, doors, climate, a map with the last 48 hours, the latest trip with per-trip minimum, mean and maximum values, 7-day graphs, and how fresh each endpoint's data is.
+
+1. Replace the placeholder prefixes in the file: `my_car_` with the prefix of your car's entity IDs, and `hyundai_api_` with `kia_api_` or `genesis_api_` if needed.
+2. In Home Assistant, add a dashboard, open it, then choose **⋮ → Edit → ⋮ → Raw configuration editor** and paste the file.
+
+Delete any card that shows **Entity not found**: the integration only creates an entity once the API has sent a valid value for it. Trip cards fill in after the first trip has been received. The VIN is shown masked to its last six characters.
+
 ## Expired or replaced API keys
 
 Personal keys expire and require **manual renewal**. Check the expiry shown in Pleos. The integration renews access tokens automatically, not the personal key. [Official key-management guide](https://document.pleos.ai/en/api-reference/vehicle-data-api/getting-started/for-private-users/manage-my-vehicle-api-key).
