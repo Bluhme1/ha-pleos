@@ -359,6 +359,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         result = await self.coordinator._async_update_data()
         self.assertEqual(len(result["cars"]), 1)
         self.assertTrue(next(iter(result["cars"].values()))["readings"])
+        self.coordinator.trip_cache.clear()
         self.client.get = AsyncMock(side_effect=ApiError(0, "connection_failed"))
         result = await self.coordinator._async_update_data()
         car = next(iter(result["cars"].values()))
@@ -395,6 +396,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(tracker.available)
         self.assertTrue(tracker.extra_state_attributes["data_stale"])
         self.coordinator.options["location"] = False
+        self.coordinator.trip_cache.clear()
         self.client.get = AsyncMock(return_value=None)
         result = await self.coordinator._async_update_data()
         self.assertEqual(self.client.get.await_count, 9)
@@ -568,6 +570,7 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
 
         third = {"triggerStartTime": stamp(10), "tripLength": 500}
         self.serve_trips(first, second, third)
+        restarted.trip_cache.clear()
         await restarted._async_update_data()
         await self.hass.async_block_till_done()
         self.assertEqual([event.data["trip_start"] for event in events[2:]], [third["triggerStartTime"]])
@@ -614,6 +617,58 @@ class NativeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.coordinator.trip_store.async_load())
         await async_remove_entry(self.hass, self.entry)
         self.assertIsNone(await self.coordinator.trip_store.async_load())
+
+    async def test_trip_endpoints_use_their_own_interval_and_keep_readings(self):
+        trip = {"triggerStartTime": stamp(30), "location": {"speed": [42], "speedUnit": ["kph"]}}
+        self.serve_trips(trip)
+        await self.coordinator._async_update_data()
+        self.assertEqual(self.client.get.await_count, 10)
+
+        # Within the trip interval only the six snapshot endpoints are queried.
+        self.client.get.reset_mock()
+        result = await self.coordinator._async_update_data()
+        queried = [call.args[0] for call in self.client.get.await_args_list]
+        self.assertEqual(len(queried), 6)
+        self.assertFalse(any("?" in path for path in queried))
+        car = next(iter(result["cars"].values()))
+        self.assertEqual(car["readings"]["speed_location_speed"]["value"], 42)
+        self.assertEqual(car["readings"]["speed_api"]["value"], "available")
+        self.assertEqual(car["sources"]["speed"], trip["triggerStartTime"])
+        self.assertEqual(car["readings"]["driving_data_api"]["value"], "no_data")
+
+        # Once the interval has passed, trips are fetched again.
+        for cached in self.coordinator.trip_cache.values():
+            cached["fetched_at"] -= timedelta(minutes=60)
+        self.client.get.reset_mock()
+        await self.coordinator._async_update_data()
+        self.assertEqual(self.client.get.await_count, 10)
+
+    async def test_trip_interval_option_and_new_vehicles_are_fetched_at_once(self):
+        self.hass.config_entries.async_update_entry(self.entry, options={"trip_poll_minutes": 5})
+        coordinator = PleosCoordinator(self.hass, self.entry, self.client)
+        self.addAsyncCleanup(coordinator.async_shutdown)
+        self.serve_trips()
+        await coordinator._async_update_data()
+        for cached in coordinator.trip_cache.values():
+            cached["fetched_at"] -= timedelta(minutes=5)
+        other = CAR | {"vin": "SYNTHETIC-CAR-002"}
+        self.client.vehicles = AsyncMock(return_value=[CAR, other])
+        self.client.get.reset_mock()
+        await coordinator._async_update_data()
+        self.assertEqual(self.client.get.await_count, 20)
+        self.client.get.reset_mock()
+        await coordinator._async_update_data()
+        self.assertEqual(self.client.get.await_count, 12)
+
+    async def test_rate_limited_poll_does_not_refresh_trip_cache(self):
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: (_ for _ in ()).throw(ApiError(429, "429"))
+                                    if "/batteries" in path else None)
+        await self.coordinator._async_update_data()
+        self.assertEqual(self.coordinator.trip_cache, {})
+        self.client.get = AsyncMock(return_value=None)
+        await self.coordinator._async_update_data()
+        self.assertEqual(self.client.get.await_count, 10)
 
     async def test_trip_events_can_be_disabled(self):
         events = self.capture_trip_events()

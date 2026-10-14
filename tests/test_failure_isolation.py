@@ -75,6 +75,7 @@ class FailureIsolationTests(unittest.IsolatedAsyncioTestCase):
     async def test_permissions_and_unregistered_vehicle_are_errors_not_no_data(self):
         for status, code in ((403, "403"), (400, "5006"), (410, "4101"), (404, "4045")):
             with self.subTest(code=code):
+                self.coordinator.trip_cache.clear()
                 self.client.get = AsyncMock(side_effect=[self.sample, ApiError(status, code), *([None] * 8)])
                 result = await self.coordinator._async_update_data()
                 car = next(iter(result["cars"].values()))
