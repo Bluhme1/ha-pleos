@@ -2,13 +2,13 @@
   "domain": "pleos_vehicle_data",
   "name": "Pleos Vehicle Data",
   "codeowners": [
-    "@jouwdan"
+    "@isarrider"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/jouwdan/ha-pleos#readme",
+  "documentation": "https://github.com/isarrider/ha-pleos#readme",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/jouwdan/ha-pleos/issues",
+  "issue_tracker": "https://github.com/isarrider/ha-pleos/issues",
   "requirements": [],
   "version": "0.1.3"
 }
