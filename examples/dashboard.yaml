@@ -5,7 +5,7 @@
 # Entity IDs: the integration names entities after the car's device in Home Assistant, followed by
 # a fixed English part. Replace the placeholder prefixes with yours, e.g. with search & replace:
 #   my_car_       →  the prefix of your car's entities (Settings → Devices → your car), e.g. ioniq_6_
-#   hyundai_api_  →  kia_api_ / genesis_api_ for the account's Connection and Archive sensors
+#   hyundai_api_  →  kia_api_ / genesis_api_ for the account's Connection sensor
 #
 # Written for an EV. A card shows "Entity not found" when the API never sent that value for your car
 # (e.g. sunroof or seat heating) – delete the card. Fuel, hybrid and freezer sensors are not included.
@@ -356,8 +356,6 @@ views:
             badges:
               - type: entity
                 entity: sensor.hyundai_api_connection
-              - type: entity
-                entity: sensor.hyundai_api_archive
           - type: markdown
             content: |-
               {%- set p = 'sensor.my_car_' -%}
@@ -489,7 +487,7 @@ views:
               {%- endif -%}
 
       # ═══════════════════════════════ ROW 4: driving trends ═══════════════════════════════
-      # Trip sensors change once per trip, so each step in these graphs is one drive.
+      # Trip sensors show the latest drive received at each poll; these graphs are not a complete trip log.
 
       - type: grid
         cards:

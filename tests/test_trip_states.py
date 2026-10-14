@@ -1,4 +1,4 @@
-"""Every new trip gets its own entity state, so Home Assistant records and exports each one."""
+"""Trip sensors show the latest reading without replaying historical states."""
 
 import logging
 from datetime import timedelta
@@ -9,7 +9,6 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import EntityPlatform
 
 from custom_components.pleos_vehicle_data.const import DOMAIN
-from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import vehicle_id
 from custom_components.pleos_vehicle_data.sensor import ReadingSensor
 
@@ -75,55 +74,15 @@ class TripStateTests(HomeAssistantTestCase):
         return [(state.state, state.attributes.get("trip_start")) for state in self.changes
                 if state.entity_id.endswith(f"_{name}_last_trip")]
 
-    async def test_each_new_trip_is_shown_in_order(self):
+    async def test_batch_and_late_trips_do_not_replay_old_sensor_states(self):
         first = trip(300, 10)
         self.serve(speed=[first])
         await self.start()
-        trips = [trip(200, 20), trip(100, 30), trip(10, 40)]
-        self.serve(speed=[first, *trips])
+        latest = trip(10, 40)
+        self.serve(speed=[first, trip(200, 20), trip(100, 30), latest])
         await self.poll()
-        self.assertEqual(self.shown("speed"), [(str(t["location"]["speed"][0]), t["triggerStartTime"]) for t in trips])
-
-        # Nothing new: nothing is shown again.
-        await self.poll()
-        self.assertEqual(len(self.shown("speed")), 3)
-
-    async def test_endpoints_step_together_by_trip_start(self):
-        # The same drive has the same start on every trip endpoint.
-        night, morning, evening = stamp(900), stamp(600), stamp(60)
-        self.serve(speed=[trip(night, 5)], driving=[drive(night, 100, 101)])
-        await self.start()
-        self.serve(speed=[trip(night, 5), trip(morning, 50), trip(evening, 70)],
-                   driving=[drive(night, 100, 101), drive(morning, 101, 111)])
-        await self.poll()
-        speeds = [value for value, _ in self.shown("speed")]
-        distances = [value for value, _ in self.shown("trip_distance")]
-        self.assertEqual(speeds, ["50", "70"])
-        # The driving endpoint has no evening trip, so its morning trip stays shown: one change only.
-        self.assertEqual(distances, ["10"])
-
-    async def test_a_late_older_trip_is_shown_then_the_latest_again(self):
-        latest = trip(30, 80)
-        self.serve(speed=[latest])
-        await self.start()
-        late = trip(120, 60)
-        self.serve(speed=[late, latest])
-        await self.poll()
-        self.assertEqual([value for value, _ in self.shown("speed")], ["60", "80"])
-
-    async def test_restart_does_not_show_trips_again(self):
-        self.serve(speed=[trip(300, 10), trip(100, 20)])
-        await self.start()
-        restarted = PleosCoordinator(self.hass, self.entry, self.client)
-        self.addAsyncCleanup(restarted.async_shutdown)
-        await self.start(restarted)
+        self.assertEqual(self.shown("speed"), [("40", latest["triggerStartTime"])])
         self.changes.clear()
-        await self.poll(restarted)
-        self.assertEqual(self.shown("speed"), [])
-
-    async def test_first_refresh_marks_trips_without_replaying(self):
-        self.serve(speed=[trip(300, 10), trip(200, 20), trip(100, 30)])
-        await self.start()
-        self.assertEqual(len(self.coordinator.trips.published[CAR_ID]["speed"]), 3)
+        self.serve(speed=[trip(150, 25), latest])
         await self.poll()
         self.assertEqual(self.shown("speed"), [])

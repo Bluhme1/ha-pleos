@@ -96,7 +96,7 @@ class ConfigFlowTests(HomeAssistantTestCase):
         defaults = (await flow.async_step_init())["data_schema"]({"polling": {}, "trips": {}, "storage": {}})
         self.assertEqual(defaults, {"polling": {"poll_minutes": 30, "stale_minutes": 60, "location": True},
                                     "trips": {"trip_poll_minutes": 60, "trip_events": False},
-                                    "storage": {"archive": True}})
+                                    "storage": {"archive": False}})
 
     async def test_setup_uses_replacement_credentials_and_fresh_token(self):
         self.hass.config_entries.async_update_entry(self.entry, data=OLD | NEW)
@@ -105,6 +105,16 @@ class ConfigFlowTests(HomeAssistantTestCase):
         self.assertEqual(self.entry.runtime_data.client.credentials["clientId"], NEW["client_id"])
         self.assertIsNone(self.entry.runtime_data.client.token)
         await self.entry.runtime_data.async_shutdown()
+
+
+    async def test_raw_exports_are_opt_in_for_new_entries(self):
+        self.hass.config_entries.async_update_entry(self.entry, options={})
+        flow = PleosOptionsFlow()
+        flow.hass = self.hass
+        flow.handler = self.entry.entry_id
+        defaults = (await flow.async_step_init())["data_schema"]({"polling": {}, "trips": {}, "storage": {}})
+        self.assertFalse(defaults["trips"]["trip_events"])
+        self.assertFalse(defaults["storage"]["archive"])
 
 
 if __name__ == "__main__":

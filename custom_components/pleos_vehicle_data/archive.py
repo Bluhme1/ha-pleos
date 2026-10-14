@@ -1,4 +1,4 @@
-"""Lossless archive of every API response, exactly as received.
+"""Optional archive of raw API payloads for export and troubleshooting.
 
 Records are appended as JSON lines to gzip files, one file per UTC day:
 <config>/pleos_vehicle_data/archive/<brand>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz

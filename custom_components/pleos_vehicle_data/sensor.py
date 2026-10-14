@@ -23,7 +23,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class ReadingSensor(VehicleEntity, SensorEntity):
     platform_domain = "sensor"
     # Complete trip arrays are available now, without copying them into recorder history.
-    _unrecorded_attributes = frozenset({"data", "vin"})
+    _unrecorded_attributes = frozenset({"data", "vin", "rejected_examples"})
 
     def __init__(self, coordinator, car_id, key, spec):
         super().__init__(coordinator, car_id, key, spec)

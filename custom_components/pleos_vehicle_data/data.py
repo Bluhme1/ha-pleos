@@ -205,7 +205,7 @@ class Rejections:
         if len(self.examples) < REJECTION_EXAMPLES:
             self.examples.append({"path": path, "value": value if isinstance(value, (str, int, float, bool)) else repr(value)[:100],
                                   "reason": reason})
-        LOGGER.debug("Pleos %s: ignored %s = %r (%s)", self.endpoint, path, value, reason)
+        LOGGER.debug("Pleos %s: ignored %s (%s)", self.endpoint, path, reason)
 
     def attributes(self):
         return {"rejected_values": self.count, "rejected_examples": self.examples}

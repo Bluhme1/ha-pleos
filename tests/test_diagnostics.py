@@ -68,3 +68,29 @@ class DiagnosticsTests(HomeAssistantTestCase):
         diagnostics = await async_get_config_entry_diagnostics(self.hass, self.entry)
         json.dumps(diagnostics)
         self.assertEqual(diagnostics["cars"], {})
+
+    async def test_diagnostics_redact_secrets_embedded_in_text_and_keys(self):
+        await self.populate_everything()
+        self.client.token = "fixture-bearer-token"
+        secrets = (CAR["vin"], "Family van", OLD["client_id"], OLD["client_secret"], self.client.token)
+        self.client.response_meta["echo"] = {"message": " ".join(secrets), OLD["client_secret"]: "echo"}
+        self.coordinator.last_exception = RuntimeError(" ".join(secrets))
+        car_id = vehicle_id("kia", CAR["vin"])
+        original = self.coordinator.data["cars"][car_id]["vehicle"].copy()
+        device = SimpleNamespace(identifiers={(DOMAIN, car_id)})
+        for diagnostics in (await async_get_config_entry_diagnostics(self.hass, self.entry),
+                            await async_get_device_diagnostics(self.hass, self.entry, device)):
+            for secret in secrets:
+                self.assertNotIn(secret, json.dumps(diagnostics))
+        self.assertEqual(self.coordinator.data["cars"][car_id]["vehicle"], original)
+
+    async def test_diagnostics_redact_trip_coordinates_summaries_and_rejected_values(self):
+        await self.populate_everything()
+        car_id = vehicle_id("kia", VIN)
+        readings = self.coordinator.data["cars"][car_id]["readings"]
+        readings["speed_location_latitude"] = {"value": 48.137, "attributes": {"trip_mean": 48.137}}
+        readings["speed_api"]["attributes"]["rejected_examples"] = [
+            {"path": "location.latitude", "value": 48.137, "reason": "unexpected type"}]
+        diagnostics = await async_get_config_entry_diagnostics(self.hass, self.entry)
+        self.assertNotIn("48.137", json.dumps(diagnostics))
+        self.assertEqual(readings["speed_location_latitude"]["value"], 48.137)

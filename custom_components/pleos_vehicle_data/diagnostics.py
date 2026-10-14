@@ -8,13 +8,11 @@ from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from .const import DOMAIN
 
 # Credentials, the VIN, the user's own vehicle name and precise coordinates.
-TO_REDACT = {"client_id", "client_secret", "vin", "nickname", "latitude", "longitude", "accessToken"}
-# Readings whose state is a coordinate.
-REDACTED_READINGS = {"locations_location_latitude", "locations_location_longitude"}
+TO_REDACT = {"client_id", "client_secret", "clientId", "clientSecret", "vin", "nickname", "latitude", "longitude", "accessToken"}
 
 
-def scrub(value, vins):
-    """Redact keys anywhere, and VINs inside any text (for example request paths)."""
+def scrub(value, secrets):
+    """Redact sensitive keys and known personal values embedded in text."""
     value = async_redact_data(value, TO_REDACT)
 
     def walk(item):
@@ -23,8 +21,8 @@ def scrub(value, vins):
         if isinstance(item, (list, tuple)):
             return [walk(child) for child in item]
         if isinstance(item, str):
-            for vin in vins:
-                item = item.replace(vin, REDACTED)
+            for secret in secrets:
+                item = item.replace(secret, REDACTED)
             return item
         if isinstance(item, datetime):
             return item.isoformat()
@@ -65,14 +63,28 @@ def _archive_state(archive):
 
 def _cars(coordinator):
     cars = (coordinator.data or {}).get("cars") or {}
-    return {car_id: car | {"readings": {key: reading | {"value": REDACTED} if key in REDACTED_READINGS else reading
-                                         for key, reading in car.get("readings", {}).items()}}
-            for car_id, car in cars.items()}
+    result = {}
+    for car_id, car in cars.items():
+        readings = {}
+        for key, reading in car.get("readings", {}).items():
+            if key.endswith(("_latitude", "_longitude")):
+                # Undocumented trip coordinates can also have min/max/mean attributes.
+                reading = reading | {"value": REDACTED, "attributes": {}}
+            elif "rejected_examples" in reading.get("attributes", {}):
+                reading = reading | {"attributes": reading["attributes"] | {
+                    "rejected_examples": [example | {"value": REDACTED}
+                                          for example in reading["attributes"]["rejected_examples"]]}}
+            readings[key] = reading
+        result[car_id] = car | {"readings": readings}
+    return result
 
 
-def _vins(coordinator):
-    return [car["vehicle"]["vin"] for car in ((coordinator.data or {}).get("cars") or {}).values()
-            if isinstance(car.get("vehicle", {}).get("vin"), str)]
+def _secrets(entry):
+    coordinator = entry.runtime_data
+    values = [entry.data.get("client_id"), entry.data.get("client_secret"), coordinator.client.token]
+    for car in ((coordinator.data or {}).get("cars") or {}).values():
+        values.extend(car.get("vehicle", {}).get(key) for key in ("vin", "nickname"))
+    return sorted({value for value in values if isinstance(value, str) and value}, key=len, reverse=True)
 
 
 async def async_get_config_entry_diagnostics(hass, entry):
@@ -83,7 +95,7 @@ async def async_get_config_entry_diagnostics(hass, entry):
         "trips": _trip_state(coordinator.trips),
         "archive": _archive_state(coordinator.archive),
         "cars": _cars(coordinator),
-    }, _vins(coordinator))
+    }, _secrets(entry))
 
 
 async def async_get_device_diagnostics(hass, entry, device):
@@ -95,4 +107,4 @@ async def async_get_device_diagnostics(hass, entry, device):
         data = await async_get_config_entry_diagnostics(hass, entry)
         data.pop("cars")
         return data
-    return scrub({"vehicle_id": car_id, "car": cars[car_id]}, _vins(coordinator))
+    return scrub({"vehicle_id": car_id, "car": cars[car_id]}, _secrets(entry))

@@ -161,6 +161,40 @@ class TripPollingTests(HomeAssistantTestCase):
         self.assertIsNone(await coordinator.trips.store.async_load())
 
 
+    async def test_failed_second_vehicle_does_not_commit_first_vehicles_trip_cache(self):
+        self.client.vehicles = AsyncMock(return_value=[CAR, CAR | {"vin": "SYNTHETIC-CAR-002"}])
+        for failure in (AuthError(), ApiError(429, "429")):
+            with self.subTest(error=type(failure).__name__):
+                self.client.get = AsyncMock(side_effect=[*([None] * 10), failure])
+                if isinstance(failure, AuthError):
+                    with self.assertRaises(ConfigEntryAuthFailed):
+                        await self.coordinator._async_update_data()
+                else:
+                    self.assertEqual((await self.coordinator._async_update_data())["status"], "rate_limited")
+                self.assertEqual(self.coordinator.trips.cache, {})
+
+    async def test_trip_errors_retry_next_poll_but_no_data_uses_trip_interval(self):
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        for error in (ApiError(500, "unknown"), ApiError(0, "connection_failed"), ApiError(404, "4045")):
+            with self.subTest(code=error.code):
+                self.coordinator.trips.cache.clear()
+                def get(path):
+                    if "/speed?" in path:
+                        raise error
+                    return None
+                self.client.get = AsyncMock(side_effect=get)
+                await self.coordinator._async_update_data()
+                self.client.get = AsyncMock(return_value=None)
+                await self.coordinator._async_update_data()
+                self.assertEqual(self.client.get.await_count, 6 if error.code == "4045" else 10)
+
+    async def test_trip_cache_drops_removed_vehicles(self):
+        self.serve_trips()
+        await self.coordinator._async_update_data()
+        self.client.vehicles.return_value = []
+        await self.coordinator._async_update_data()
+        self.assertEqual(self.coordinator.trips.cache, {})
+
 class TripCatchUpTests(HomeAssistantTestCase):
     def serve(self, side_effect=None):
         self.client.vehicles = AsyncMock(return_value=[CAR])

@@ -46,6 +46,12 @@ class SnapshotRejectionTests(unittest.TestCase):
         rejections = self.rejected("batteries", {"charge": {"targetStateOfCharge": {f"t{i}": 200 for i in range(9)}}})
         self.assertEqual((rejections.count, len(rejections.examples)), (9, REJECTION_EXAMPLES))
 
+    def test_debug_logging_omits_rejected_payload_values(self):
+        with self.assertLogs("custom_components.pleos_vehicle_data.data", level="DEBUG") as logs:
+            Rejections("speed").add("unknown", "fixture-private-value", "unsupported type")
+        self.assertNotIn("fixture-private-value", " ".join(logs.output))
+        self.assertIn("unsupported type", logs.output[0])
+
     def test_without_a_collector_nothing_changes(self):
         self.assertEqual(readings("batteries", {"charge": {"stateOfCharge": 101}}, "EV"), {})
 

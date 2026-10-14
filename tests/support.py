@@ -40,6 +40,8 @@ class HomeAssistantTestCase(unittest.IsolatedAsyncioTestCase):
         self.hass.config_entries = config_entries.ConfigEntries(self.hass, {})
         self.entry = entry()
         self.hass.config_entries._entries[self.entry.entry_id] = self.entry
+        # Feature tests explicitly opt into raw-data exports; normal installs leave them off.
+        self.hass.config_entries.async_update_entry(self.entry, options={"trip_events": True, "archive": True})
         # Home Assistant always provides the device registry; trip events look devices up in it.
         self.hass.data[device_registry.DATA_REGISTRY] = device_registry.DeviceRegistry(self.hass)
         await device_registry.async_load(self.hass, load_empty=True)
