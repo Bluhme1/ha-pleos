@@ -11,6 +11,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class VehicleTracker(VehicleEntity, TrackerEntity):
+    platform_domain = "device_tracker"
     @property
     def source_type(self):
         return SourceType.GPS
