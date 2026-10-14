@@ -81,6 +81,10 @@ Every API response is kept exactly as received, so nothing the API returns is lo
 
 The archive contains the VIN in the vehicle list and the car's locations. Treat the folder like the rest of your Home Assistant configuration.
 
+### Diagnostics
+
+**Settings → Devices & services → Pleos Vehicle Data → ⋮ → Download diagnostics** saves the integration's state for troubleshooting: options, polling and rate-limit status, trip windows and announced trips, archive status, and every car's parsed readings with the latest raw responses. The download from a car's device page contains only that car. Credentials, the VIN (also inside request paths and texts), vehicle nicknames and coordinates are removed, so it can be attached to an issue.
+
 ## Compared with kia_uvo
 
 [kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) (Kia Uvo / Hyundai Bluelink) is the widely used community integration. It is built on [hyundai_kia_connect_api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api), which talks to the backend of the manufacturers' phone apps. This integration uses the official Pleos Vehicle Data API instead. The two can run side by side: they create separate devices and use different accounts and backends.
