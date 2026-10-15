@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -44,8 +45,12 @@ class PleosCoordinator(DataUpdateCoordinator):
         self.fetched_trips = []  # [(car_id, endpoint, data)] returned in the running poll.
         self.ranges = RangeCache(hass, entry.entry_id)
         self.last_successful_poll = None
+        self.using_last_data = False
 
     async def _async_update_data(self):
+        self._previous_update_success = self.last_update_success
+        can_keep_data = self.last_update_success or self.using_last_data
+        self.using_last_data = False
         try:
             vehicles = await self.client.vehicles()
             if self.options["trip_events"]:
@@ -91,7 +96,17 @@ class PleosCoordinator(DataUpdateCoordinator):
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None
         except ApiError as error:
+            self.using_last_data = bool(self.data) and can_keep_data and (
+                error.status in (0, 429) or 500 <= error.status < 600
+            )
             raise UpdateFailed(str(error)) from None
+
+    @callback
+    def _async_refresh_finished(self):
+        super()._async_refresh_finished()
+        # Home Assistant skips notifications after consecutive failures; retained states still need updates.
+        if not self.last_update_success and not self._previous_update_success:
+            self.async_update_listeners()
 
     async def _update_car(self, car_id, vehicle, result, pending, now):
         car = {"vehicle": vehicle, "readings": {"vehicle_information": self._vehicle_information(vehicle)},

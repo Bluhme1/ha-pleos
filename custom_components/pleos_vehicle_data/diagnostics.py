@@ -35,6 +35,7 @@ def _coordinator_state(coordinator):
     retry_in = coordinator.client.retry_at - time.monotonic()
     return {
         "last_update_success": coordinator.last_update_success,
+        "using_last_data": coordinator.using_last_data,
         "last_exception": repr(coordinator.last_exception) if coordinator.last_exception else None,
         "status": (coordinator.data or {}).get("status"),
         "update_interval_minutes": coordinator.update_interval.total_seconds() / 60,
