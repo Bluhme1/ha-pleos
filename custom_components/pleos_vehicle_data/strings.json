@@ -507,7 +507,7 @@
   "services": {
     "refresh": {
       "name": "Refresh",
-      "description": "Fetches the latest vehicle data from Pleos.  This action does not fetch the vehicle's current state to Pleos.",
+      "description": "Requests the latest data already available in Pleos for this account. It cannot make the car upload new data.",
       "fields": {
         "config_entry_id": {
           "name": "Account",

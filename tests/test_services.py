@@ -1,6 +1,7 @@
 """The refresh service."""
 
-from unittest.mock import AsyncMock
+import asyncio
+from unittest.mock import AsyncMock, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ServiceValidationError
@@ -15,7 +16,6 @@ class ServiceTests(HomeAssistantTestCase):
     def setup_service(self, state=ConfigEntryState.LOADED):
         async_setup_services(self.hass)
         self.entry.runtime_data = self.coordinator
-        self.coordinator.async_refresh = AsyncMock()
         self.entry._async_set_state(self.hass, state, None)
 
     async def call(self, entry_id):
@@ -29,7 +29,16 @@ class ServiceTests(HomeAssistantTestCase):
 
     async def test_refresh_updates_the_coordinator(self):
         self.setup_service()
-        await self.call(self.entry.entry_id)
+        with patch.object(self.coordinator, "async_request_refresh", new_callable=AsyncMock) as refresh:
+            await self.call(self.entry.entry_id)
+        refresh.assert_awaited_once_with()
+
+    async def test_concurrent_requests_batch_account_polls(self):
+        self.setup_service()
+        self.client.vehicles = AsyncMock(return_value=[])
+        await asyncio.gather(*(self.call(self.entry.entry_id) for _ in range(5)))
+        self.client.vehicles.assert_awaited_once_with()
+        self.assertEqual(self.coordinator.data, {"status": "no_vehicles", "cars": {}})
 
     async def test_unknown_entry_is_rejected(self):
         self.setup_service()

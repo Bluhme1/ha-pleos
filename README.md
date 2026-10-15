@@ -74,6 +74,12 @@ All settings are in one place: **Settings → Devices & services → Pleos Vehic
 
 Credentials are not options: replace them with **⋮ → Reconfigure**; see [Expired or replaced API keys](#expired-or-replaced-api-keys).
 
+## Refresh on demand
+
+Use the **Pleos Vehicle Data: Refresh** action (`pleos_vehicle_data.refresh`) in Home Assistant's action editor or an automation, and select the **Account** to refresh. It requests another poll of that account without waiting for its normal polling interval. Repeated requests are batched, and trip polling intervals and API rate-limit backoff still apply.
+
+This fetches data already available in Pleos. It cannot wake the car or make it upload new readings, so the returned values may be unchanged.
+
 ## Data available in Home Assistant
 
 All ten common Vehicle Data API endpoints are queried. Fields appear when the API supplies valid values for the vehicle.
