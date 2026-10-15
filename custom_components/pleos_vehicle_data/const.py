@@ -19,3 +19,4 @@ TRIP_EVENT = DOMAIN + "_trip"
 TRIP_CATCH_UP_DAYS = 7
 # Announced trips are remembered longer than any query reaches back, so none is announced twice.
 TRIP_MEMORY_DAYS = TRIP_CATCH_UP_DAYS + 2
+SERVICE_REFRESH = "refresh"

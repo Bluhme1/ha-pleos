@@ -1,16 +1,27 @@
 """Pleos Vehicle Data native Home Assistant integration."""
 
 from homeassistant.const import Platform
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PleosClient
 from .archive import archive_store
+from .const import DOMAIN
 from .coordinator import PleosCoordinator
 from .ranges import range_store
+from .services import async_setup_services
 from .statistics import TripStatistics
 from .trips import fired_store, trip_store, window_store
 
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER, Platform.EVENT]
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass, config):
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass, entry):

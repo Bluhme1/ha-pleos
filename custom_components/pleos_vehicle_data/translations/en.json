@@ -503,5 +503,25 @@
         }
       }
     }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh",
+      "description": "Fetches the latest vehicle data from Pleos now.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Account",
+          "description": "The Pleos account to refresh."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "Config entry {entry_id} was not found."
+    },
+    "entry_not_loaded": {
+      "message": "{title} is not loaded."
+    }
   }
 }
