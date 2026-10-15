@@ -131,6 +131,16 @@ Leave this option empty for correctly reported odometers. It applies only to the
 
 Home Assistant converts readings for your unit preferences. To display miles, open the odometer entity's settings and set **Unit of measurement** to **mi**. This converts both the number and label: **1,609.344 km = 1,000 mi**. If a reading differs from the car or app, compare its value and unit with `data.odometer` on the **Driving status API** sensor and include both in an issue report.
 
+### Driving ranges
+
+Range readings accept both `mile` and `miles`, alongside `km`, `meter` and `feet`. Home Assistant converts their values for your selected display unit.
+
+When the API returns several ranges with the same type, each has its own sensor. The existing unnumbered sensor shows the first entry of that type; subsequent entries are named **Plug-in hybrid range 2**, **Plug-in hybrid range 3**, and so on. Previously, the last entry overwrote the earlier ones. Numbering follows the API's order, including entries whose values are missing or invalid; it does not identify petrol versus electric range. If the API changes the order, the numbered readings follow that change.
+
+The last valid range and its native unit are saved per vehicle and sensor, including across restarts. If a later response omits it, contains a dash or an invalid value, lacks a valid timestamp, or the powertrain request fails, the saved range stays visible with `last_known: true` and `data_stale: true`. Its `reported_at` and `data_age_minutes` refer to the original reading, not the latest poll. A new valid reading clears `last_known`; the usual stale-data threshold still applies. Raw API diagnostics and archives remain unchanged, and the **Powertrain status API** sensor still reports request errors.
+
+Saved ranges can remain visible indefinitely while the vehicle is still on the account. Automations needing current data should check `data_stale`. Account-wide connection or authentication failures still make vehicle readings unavailable. Removing a vehicle from the API's vehicle list clears its saved ranges; removing the integration clears this saved data too.
+
 ### Trip events
 
 Enable **Trip events** in the [options](#options) to fire a `pleos_vehicle_data_trip` event for each new trip. It is off by default. Events contain every returned sample for use in automations or exports, for example through Node-RED or AppDaemon:
