@@ -8,12 +8,13 @@ from urllib.parse import quote
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .account import account_id
 from .api import ApiError, AuthError
 from .archive import ResponseArchive
-from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
-from .data import (Rejections, identifier, location, new_trips, readings, reported_age, trip_readings,
+from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, SNAPSHOT_ENDPOINTS, TRIP_ENDPOINTS
+from .data import (Rejections, finite_number, identifier, location, new_trips, readings, reported_age, trip_readings,
                    trip_summary, vehicle_id)
-from .ranges import RangeCache
+from .ranges import RANGE_PREFIX, RangeCache
 from .statistics import TripStatistics
 from .trips import TripTracker
 
@@ -29,11 +30,13 @@ class PleosCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry, client):
         self.client = client
         self.brand = entry.data["brand"]
+        self.account_id = account_id(entry)
+        self.account_name = entry.title
         self.options = DEFAULT_OPTIONS | dict(entry.options)
         super().__init__(hass, LOGGER, config_entry=entry, name=BRANDS[self.brand],
                          update_interval=timedelta(minutes=self.options["poll_minutes"]))
         self.trips = TripTracker(hass, entry.entry_id, self.options["trip_poll_minutes"])
-        self.archive = ResponseArchive(hass, entry.entry_id, self.brand) if self.options["archive"] else None
+        self.archive = ResponseArchive(hass, entry.entry_id, self.account_id) if self.options["archive"] else None
         # Trips waiting to be fired on each car's Trip event entity: {car_id: [(event_type, attributes)]}.
         self.trip_queue = {}
         self.new_trips = []  # [(car_id, endpoint, trip)] found in the running poll.
@@ -60,7 +63,7 @@ class PleosCoordinator(DataUpdateCoordinator):
                 self.archive.begin()
                 self.archive.add_vehicles(now, vehicles, self.client.response_meta.get("/v1/vehicles/consent", {}))
             for vehicle in vehicles:
-                car_id = vehicle_id(self.brand, vehicle["vin"])
+                car_id = vehicle_id(self.account_id, vehicle["vin"])
                 car = await self._update_car(car_id, vehicle, result, pending, now)
                 result["cars"][car_id] = car
                 if self.trips.due(car_id, now) and all(
@@ -110,7 +113,28 @@ class PleosCoordinator(DataUpdateCoordinator):
                 self._apply_trips(car_id, car, endpoint, data, source, pending)
             else:
                 self._apply_snapshot(car_id, car, endpoint, data, source)
+        self._retain_measurements(car_id, car)
         return car
+
+    def _retain_measurements(self, car_id, car):
+        previous = (self.data or {}).get("cars", {}).get(car_id, {})
+        for key, reading in previous.get("readings", {}).items():
+            endpoint = reading["source"]
+            if (endpoint not in SNAPSHOT_ENDPOINTS or endpoint == "locations" or key.startswith(RANGE_PREFIX)
+                    or reading["domain"] != "sensor" or not finite_number(reading["value"])
+                    or (reading.get("device_class") not in ("battery", "distance", "temperature", "pressure")
+                        and key != "powertrains_engine_fuellevel")):
+                continue
+            source = car["readings"][identifier(endpoint) + "_api"]
+            status = source["attributes"].get("http_status", -1)
+            if source["value"] != "error" or not (status in (0, 429) or 500 <= status < 600):
+                continue
+            attrs = reading.get("attributes", {})
+            stamp = attrs.get("reported_at", previous["sources"].get(endpoint))
+            if reported_age(stamp) is not None:
+                car["readings"][key] = reading | {"attributes": attrs | {
+                    "reported_at": stamp, "last_known": True, "data_stale": True,
+                }}
 
     def _vehicle_information(self, vehicle):
         attributes = {"vin": vehicle["vin"], "nickname": vehicle.get("nickname"),

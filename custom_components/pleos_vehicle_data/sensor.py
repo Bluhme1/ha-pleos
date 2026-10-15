@@ -9,7 +9,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import BRANDS, DOMAIN
+from .const import DOMAIN
 from .entity import VehicleEntity, discover
 from .names import ENTITY_NAMES
 
@@ -57,9 +57,9 @@ class ConnectionSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
-        self._attr_unique_id = coordinator.brand + "_api_status"
+        self._attr_unique_id = coordinator.account_id + "_api_status"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.brand + "_api")}, name=BRANDS[coordinator.brand] + " API", manufacturer="Pleos",
+            identifiers={(DOMAIN, coordinator.account_id + "_api")}, name=coordinator.account_name + " API", manufacturer="Pleos",
         )
 
     @property
@@ -86,8 +86,8 @@ class LastSuccessfulPollSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
-        self._attr_unique_id = coordinator.brand + "_last_successful_poll"
-        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.brand + "_api")})
+        self._attr_unique_id = coordinator.account_id + "_last_successful_poll"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.account_id + "_api")})
 
     @property
     def available(self):
@@ -110,8 +110,8 @@ class ArchiveSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
-        self._attr_unique_id = coordinator.brand + "_archive"
-        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.brand + "_api")})
+        self._attr_unique_id = coordinator.account_id + "_archive"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.account_id + "_api")})
 
     @property
     def available(self):
