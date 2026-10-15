@@ -113,6 +113,7 @@ Each manufacturer entry creates an **API device** (for example *Kia API*) and on
 | --- | --- | --- |
 | API device | **Connection** | `connected`, `no_vehicles` (the key works but grants no car; see [No vehicles](#no-vehicles)), `key_required` (replace the personal key), `api_unavailable` (Pleos could not be reached) or `rate_limited` (Pleos asked to slow down; requests pause until it allows them again) |
 | API device | **Archive** | Only when the archive is enabled: `ok` or `error`, with the folder, last write and last error |
+| API device | **Last successful poll** | When Home Assistant last completed this account's poll without request errors. This is the fetch completion time, not when the car uploaded its data. |
 | Car | Readings | One sensor or binary sensor per value the API returns, for example **Battery level**, **Odometer**, **Front left door** |
 | Car | **(last trip)** sensors | The latest trip's final sample per trip field, with summaries (see above) |
 | Car | **Trip** | Event entity firing once per trip; see [Trip event entity](#trip-event-entity) |
@@ -120,6 +121,8 @@ Each manufacturer entry creates an **API device** (for example *Kia API*) and on
 | Car | **Vehicle information** | Diagnostic: powertrain type, with VIN, model and every other Get Vehicles field as attributes |
 | Car | ***Endpoint* API** | Diagnostic, one per endpoint: `available`, `no_data`, `error` or `disabled`, with the raw response, query and rejected values (see above) |
 | Car | ***Endpoint* last reported**, ***Endpoint* data age** | Diagnostic, per status endpoint: when the car last reported that data and how old it is |
+
+**Last successful poll** advances only when the vehicle list and all endpoints requested in that poll finish without errors. Disabled endpoints, trip data reused between scheduled trip polls, and an API `no_data` result do not count as failures. Authentication, connection, rate-limit and individual endpoint errors leave the timestamp unchanged. It remains visible during failures and starts unknown after setup/reload until a poll succeeds. Check each car's **last reported** and **data age** sensors for the age of the actual vehicle readings; a successful poll can return old data.
 
 ### Units
 
@@ -130,6 +133,16 @@ Some vehicles return a kilometre odometer value labelled `mile` ([#6](https://gi
 Leave this option empty for correctly reported odometers. It applies only to the selected cars' snapshot odometers labelled miles; trip data and other units are unaffected. Clear the selection if Pleos fixes the underlying data. Existing history and statistics are not rewritten. The lower corrected reading can be interpreted as a reset by cumulative statistics, so check **Developer tools → Statistics** for affected odometer totals after enabling it.
 
 Home Assistant converts readings for your unit preferences. To display miles, open the odometer entity's settings and set **Unit of measurement** to **mi**. This converts both the number and label: **1,609.344 km = 1,000 mi**. If a reading differs from the car or app, compare its value and unit with `data.odometer` on the **Driving status API** sensor and include both in an issue report.
+
+### Driving ranges
+
+Range readings accept both `mile` and `miles`, alongside `km`, `meter` and `feet`. Home Assistant converts their values for your selected display unit.
+
+When the API returns several ranges with the same type, each has its own sensor. The existing unnumbered sensor shows the first entry of that type; subsequent entries are named **Plug-in hybrid range 2**, **Plug-in hybrid range 3**, and so on. Previously, the last entry overwrote the earlier ones. Numbering follows the API's order, including entries whose values are missing or invalid; it does not identify petrol versus electric range. If the API changes the order, the numbered readings follow that change.
+
+The last valid range and its native unit are saved per vehicle and sensor, including across restarts. If a later response omits it, contains a dash or an invalid value, lacks a valid timestamp, or the powertrain request fails, the saved range stays visible with `last_known: true` and `data_stale: true`. Its `reported_at` and `data_age_minutes` refer to the original reading, not the latest poll. A new valid reading clears `last_known`; the usual stale-data threshold still applies. Raw API diagnostics and archives remain unchanged, and the **Powertrain status API** sensor still reports request errors.
+
+Saved ranges can remain visible indefinitely while the vehicle is still on the account. Automations needing current data should check `data_stale`. Account-wide connection or authentication failures still make vehicle readings unavailable. Removing a vehicle from the API's vehicle list clears its saved ranges; removing the integration clears this saved data too.
 
 ### Trip events
 

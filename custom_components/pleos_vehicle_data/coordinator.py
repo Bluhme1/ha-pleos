@@ -13,6 +13,7 @@ from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, TRIP_ENDPOINTS
 from .data import (Rejections, identifier, location, new_trips, readings, reported_age, trip_readings,
                    trip_summary, vehicle_id)
+from .ranges import RangeCache
 from .statistics import TripStatistics
 from .trips import TripTracker
 
@@ -38,6 +39,8 @@ class PleosCoordinator(DataUpdateCoordinator):
         self.new_trips = []  # [(car_id, endpoint, trip)] found in the running poll.
         self.statistics = TripStatistics(hass, entry.entry_id)
         self.fetched_trips = []  # [(car_id, endpoint, data)] returned in the running poll.
+        self.ranges = RangeCache(hass, entry.entry_id)
+        self.last_successful_poll = None
 
     async def _async_update_data(self):
         try:
@@ -64,6 +67,7 @@ class PleosCoordinator(DataUpdateCoordinator):
                     car["readings"][identifier(endpoint) + "_api"]["value"] != "error" for endpoint in TRIP_ENDPOINTS
                 ):
                     trip_cache[car_id] = car
+            await self.ranges.apply(result["cars"])
             if self.options["trip_events"]:
                 # Announce only after every car was read, so a failed poll cannot mark trips as seen.
                 await self.trips.announce(self.brand, pending)
@@ -77,6 +81,9 @@ class PleosCoordinator(DataUpdateCoordinator):
                     self.trips.remember(car_id, now, car)
                 self.trips.cache = {car_id: cached for car_id, cached in self.trips.cache.items()
                                     if car_id in result["cars"]}
+            if all(car["readings"][identifier(endpoint) + "_api"]["value"] != "error"
+                   for car in result["cars"].values() for endpoint in ENDPOINTS):
+                self.last_successful_poll = datetime.now(timezone.utc)
             return result
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None

@@ -14,6 +14,7 @@ BINARY_KEYS = ("batteries_charge_charging", "batteries_charge_plugin", "driving_
 def _sensor_names():
     names = {key: name for key, name in NAMES.items() if key not in BINARY_KEYS}
     names["connection"] = "Connection"
+    names["last_successful_poll"] = "Last successful poll"
     names["archive"] = "Archive"
     names["vehicle_information"] = "Vehicle information"
     for endpoint in ENDPOINTS:

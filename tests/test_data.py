@@ -9,6 +9,28 @@ from support import CAR, stamp
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_range_mile_aliases(self):
+        for unit in ("mile", "miles"):
+            with self.subTest(unit=unit):
+                sample = {"distanceToEmpties": [{"type": "HEV", "value": "257", "unit": unit}]}
+                reading = readings("powertrains", sample, "HV")["powertrains_distancetoempties_hev"]
+                self.assertEqual((reading["value"], reading["unit_of_measurement"]), (257, "mi"))
+
+    def test_repeated_range_types_keep_separate_slots_and_units(self):
+        sample = {"distanceToEmpties": [{"type": "PHEV", "value": "400", "unit": "km"},
+                                      {"type": "PHEV", "value": "50", "unit": "mile"},
+                                      {"type": "EV", "value": "100", "unit": "km"}]}
+        parsed = readings("powertrains", sample, "PE")
+        self.assertEqual(parsed["powertrains_distancetoempties_phev"]["value"], 400)
+        second = parsed["powertrains_distancetoempties_phev_2"]
+        self.assertEqual((second["value"], second["unit_of_measurement"], second["name"]),
+                         (50, "mi", "Plug-in hybrid range 2"))
+        sample["distanceToEmpties"][0]["value"] = "-"
+        parsed = readings("powertrains", sample, "PE")
+        self.assertNotIn("powertrains_distancetoempties_phev", parsed)
+        self.assertEqual(parsed["powertrains_distancetoempties_phev_2"]["value"], 50)
+        self.assertEqual(parsed["powertrains_distancetoempties_ev"]["value"], 100)
+
     def test_ev_hybrid_and_combustion(self):
         sample = {"engine": {"fuelLevel": 0}, "distanceToEmpties": [{"type": "EV", "value": "106", "unit": "km"}]}
         self.assertNotIn("powertrains_engine_fuellevel", readings("powertrains", sample, "EV"))

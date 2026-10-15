@@ -172,7 +172,7 @@ SNAPSHOT_FIELDS = (
     (None, prefix("charge", "targetStateOfCharge"), PERCENT),
     (None, last("fuelLevel"), Spec(0, 100, unit="%")),
     (None, exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration")),
-    ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "miles"),
+    ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "mile", "miles"),
                                                       numeric_text=True, device_class="distance")),
     ("driving", exact(("odometer",)), Spec(0, 16777214, units=("km", "mile", "meter", "feet"),
                                            device_class="distance", state_class="total_increasing")),
@@ -245,12 +245,17 @@ def readings(endpoint, data, vehicle_type, rejections=None):
                     if (key := identifier(endpoint + "_warnings")) in result:
                         result[key]["attributes"] = {"warnings": list(value), "warning_count": len(value)}
                 return
+            occurrences = {}
             for index, child in enumerate(value):
                 part = child.get("type") if isinstance(child, dict) else None
                 if part is not None and part != "invalid" and not isinstance(part, str):
                     reject((*path, f"row{index + 1}", "type"), part, "type is not text")
                 if part == "invalid" or (part is not None and not isinstance(part, str)):
                     continue
+                if endpoint == "powertrains" and path == ("distanceToEmpties",) and part:
+                    occurrences[part] = occurrences.get(part, 0) + 1
+                    if occurrences[part] > 1:
+                        part = f"{part}_{occurrences[part]}"
                 walk(child, (*path, part or f"row{index + 1}"), unit)
             return
         if value is None or value == "invalid" or not path:
@@ -295,7 +300,12 @@ def readings(endpoint, data, vehicle_type, rejections=None):
                 opts["device_class"] = "battery_charging"
             opts.pop("state_class", None)
         key = identifier(endpoint + "_" + "_".join(map(str, path)))
-        result[key] = {"value": value, "name": NAMES.get(key, label(path)), "domain": domain, **opts}
+        name = NAMES.get(key, label(path))
+        if endpoint == "powertrains" and path[0] == "distanceToEmpties":
+            base, _, slot = key.rpartition("_")
+            if slot.isdigit() and base in NAMES:
+                name = NAMES[base] + " " + slot
+        result[key] = {"value": value, "name": name, "domain": domain, **opts}
 
     walk(data)
     return result
