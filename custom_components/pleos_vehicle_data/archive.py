@@ -1,7 +1,7 @@
 """Optional archive of raw API payloads for export and troubleshooting.
 
 Records are appended as JSON lines to gzip files, one file per UTC day:
-<config>/pleos_vehicle_data/archive/<brand>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz
+<config>/pleos_vehicle_data/archive/<account>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz
 
 Unchanged responses are not written again: a snapshot or vehicle list is archived
 when its content differs from the last archived copy, and each trip is archived once
@@ -50,9 +50,9 @@ def write_records(directory, records):
 
 
 class ResponseArchive:
-    def __init__(self, hass, entry_id, brand):
+    def __init__(self, hass, entry_id, account):
         self.hass = hass
-        self.directory = Path(hass.config.path(DOMAIN, "archive", brand))
+        self.directory = Path(hass.config.path(DOMAIN, "archive", account))
         self.store = archive_store(hass, entry_id)
         # {"snapshots": {"<car>/<endpoint>": hash}, "trips": {"<car>/<endpoint>": {start: hash}}, "vehicles": hash}
         self.hashes = None

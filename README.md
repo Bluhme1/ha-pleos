@@ -1,6 +1,6 @@
 # Pleos Vehicle Data
 
-A Home Assistant integration for the official Pleos **personal Vehicle Data API**. Supports Hyundai, Kia and Genesis accounts, with one entry per manufacturer and a device for each vehicle. Requires Home Assistant **2026.10 or later**.
+A Home Assistant integration for the official Pleos **personal Vehicle Data API**. Supports Hyundai, Kia and Genesis accounts, with one entry per account and a device for each vehicle. Requires Home Assistant **2026.10 or later**.
 
 ## Contents
 
@@ -52,11 +52,15 @@ The private API only allows the vehicle's **primary user** to authorise access. 
 1. Sign into [Pleos Playground](https://pleos.ai/). Open the account menu → **My Vehicle Data API**. This menu is available to users in Europe.
 2. Select the manufacturer, accept the required terms, choose **Get API Key**, and sign into the manufacturer's account. Copy **Client ID** and **Client Secret**. Private users do not need a business project or API-access approval. [Official key-generation guide](https://document.pleos.ai/en/api-reference/vehicle-data-api/getting-started/for-private-users/request-my-vehicle-api-key).
 3. In Home Assistant, open **Settings → Devices & services → Add integration → Pleos Vehicle Data**. Select that manufacturer and enter both credentials. Setup validates them before saving.
-4. Add the car's entities to dashboards or automations. Repeat setup for another manufacturer if needed.
+4. Add the car's entities to dashboards or automations. Repeat setup for another account, including another account from the same manufacturer.
+
+Each account has separate devices, readings, options, trip history and archive storage. Additional entries are named **Kia 2**, **Kia 3**, and so on; you can rename them in Home Assistant. Adding the same API key twice is rejected. To replace an existing account's credentials, use **⋮ → Reconfigure** on that entry instead of adding it again. Different keys are treated as separate accounts, even if they grant access to the same car.
+
+Existing installations keep their entity and device IDs, statistics and archive paths. Replacing credentials keeps those identities for both existing and newly added accounts.
 
 ## Options
 
-All settings are in one place: **Settings → Devices & services → Pleos Vehicle Data → Configure** on a manufacturer entry. The dialog has three sections, **Vehicle status**, **Trips** and **Storage**. Changes reload the integration. Everything not listed here works without configuration, including the **Trip** event entity and the trip statistics.
+All settings are in one place: **Settings → Devices & services → Pleos Vehicle Data → Configure** on an account entry. The dialog has three sections, **Vehicle status**, **Trips** and **Storage**. Changes reload the integration. Everything not listed here works without configuration, including the **Trip** event entity and the trip statistics.
 
 | Section | Option | Default | Range | Effect |
 | --- | --- | --- | --- | --- |
@@ -103,11 +107,15 @@ Numeric trip sensors have `trip_min`, `trip_max`, `trip_mean`, `valid_samples` a
 
 Status endpoints have reporting-time and data-age sensors when the vehicle supplies a valid timestamp. Readings stay visible while the car is parked; check `reported_at`, `data_age_minutes` and `data_stale` for their age. Turning off location in the [options](#options) disables both location requests and GPS tracking.
 
+During connection failures, rate limits and server errors on an individual endpoint, the last valid battery levels, charge limits, fuel level, odometer, temperatures and tyre pressures remain visible with `last_known: true` and `data_stale: true`. Their age and `reported_at` still refer to the original vehicle reading, and endpoint diagnostics continue to show the error. Successful responses replace these values and clear the retention marker. Permission errors, `no_data`, and missing or invalid fields in successful responses do not retain these measurements. Locks, doors, warnings, charging/ignition status, charge time remaining and location are not retained.
+
+These measurements are retained only in memory, until a reload or restart; [driving ranges](#driving-ranges) have separate persistent restoration. Account-wide failures still make vehicle readings unavailable. Retained values can remain indefinitely during endpoint failures, so automations needing current data must check `data_stale`.
+
 Entities use names such as **AC charge limit** and **Cabin fan speed**; historical readings include **(last trip)**. Name changes preserve existing IDs and customised names. Documented fields support Home Assistant translations, with English included. New IDs use the English name regardless of your display language. Undocumented fields use names derived from their API paths.
 
 ### Entities and devices
 
-Each manufacturer entry creates an **API device** (for example *Kia API*) and one device per car.
+Each account entry creates an **API device** (for example *Kia API* or *Kia 2 API*) and one device per car.
 
 | Device | Entity | What it shows |
 | --- | --- | --- |
@@ -212,11 +220,11 @@ chart_type: bar
 
 The optional archive keeps raw snapshot payloads and trip objects, including fields this integration does not understand yet. The archive is off by default and can be enabled under **Storage** in the [options](#options).
 
-- Files: `<config>/pleos_vehicle_data/archive/<manufacturer>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz`, one gzip-compressed JSON object per line, by UTC day of the request.
+- Files: `<config>/pleos_vehicle_data/archive/<account>/<YYYY-MM>/<YYYY-MM-DD>.jsonl.gz`, one gzip-compressed JSON object per line, by UTC day of the request. Existing entries keep their manufacturer folder; new entries get a separate account folder. The **Archive** sensor shows the exact path.
 - A snapshot or the vehicle list is written when its content changes; an unchanged response is not written again. Each trip is written once, and again only if Pleos later returns different content for it. Restarts do not cause duplicates.
 - Each record has `schema`, `kind` (`vehicles`, `snapshot`, `trip` or `trip_response`), `fetched_at`, `endpoint`, `vehicle_id`, the trip `query` and the API's `api_metadata`, plus the response in `data` or the trip in `trip`.
 - Files remain until you delete them, including after removing the integration. Read them with `zcat`, `zgrep` or Python's `gzip.open`.
-- The **Archive** diagnostic sensor on the manufacturer's API device shows `ok` or `error`, the folder, the last write and the last error.
+- The **Archive** diagnostic sensor on the account's API device shows `ok` or `error`, the folder, the last write and the last error.
 
 The archive contains the VIN in the vehicle list and the car's locations. Treat the folder like the rest of your Home Assistant configuration.
 
@@ -250,7 +258,7 @@ Personal keys expire and require **manual renewal**. Check the expiry shown in P
 
 Expired access tokens are replaced automatically and the failed request is retried once. A 403 that persists with a fresh token remains an API permission error; it does not ask you to replace a valid personal key.
 
-When credentials are rejected, polling stops and Home Assistant requests reauthentication. Generate a new personal key and replace **both Client ID and Client Secret** in that request. To replace credentials before expiry, use the manufacturer's **⋮ → Reconfigure** menu. The existing entry reloads and retains entity IDs for the same vehicles.
+When credentials are rejected, polling stops and Home Assistant requests reauthentication. Generate a new personal key and replace **both Client ID and Client Secret** in that request. To replace credentials before expiry, use the account entry's **⋮ → Reconfigure** menu. The existing entry reloads and retains entity IDs for the same vehicles.
 
 Pleos invalidates old access tokens when a key expires, is revoked or is reissued. A newly registered or activated vehicle also needs a new key: vehicle access is fixed at issuance. [Get Vehicles rules](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/for-private-users/get-vehicles).
 

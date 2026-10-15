@@ -46,7 +46,7 @@
       "rate_limited": "Pleos is limiting requests. Wait a few minutes before trying again."
     },
     "abort": {
-      "already_configured": "This manufacturer is already configured. Use Reconfigure on its existing entry to replace the key."
+      "already_configured": "This API key is already configured. Use Reconfigure on its existing entry to replace it."
     }
   },
   "options": {

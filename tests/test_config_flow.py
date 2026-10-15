@@ -8,6 +8,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from custom_components.pleos_vehicle_data import async_setup_entry
+from custom_components.pleos_vehicle_data.account import account_id, credential_id
 from custom_components.pleos_vehicle_data.api import AuthError, PleosClient
 from custom_components.pleos_vehicle_data.config_flow import PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN
@@ -34,7 +35,8 @@ class ConfigFlowTests(HomeAssistantTestCase):
             result = await flow.async_step_reauth_confirm(NEW)
         self.assertEqual(result["reason"], "reauth_successful")
         self.assertEqual(self.entry.data, OLD | NEW)
-        self.assertEqual(self.entry.unique_id, "kia")
+        self.assertEqual(self.entry.unique_id, credential_id("kia", NEW["client_id"]))
+        self.assertEqual(account_id(self.entry), "kia")
         reload.assert_called_once_with(self.entry.entry_id)
 
     async def test_rejected_replacement_keeps_previous_credentials(self):

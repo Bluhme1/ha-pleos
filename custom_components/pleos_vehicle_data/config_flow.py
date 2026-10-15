@@ -1,5 +1,7 @@
 """Guided setup and replacement of manually renewed personal API keys."""
 
+from uuid import uuid4
+
 import probatio as vol
 
 from homeassistant import config_entries
@@ -13,6 +15,7 @@ from homeassistant.helpers.selector import (
     TextSelector, TextSelectorConfig, TextSelectorType,
 )
 
+from .account import account_id, credential_id
 from .api import ApiError, AuthError, PleosClient
 from .const import BRANDS, DEFAULT_OPTIONS, DOMAIN
 
@@ -43,13 +46,21 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input:
             brand = user_input["brand"]
-            await self.async_set_unique_id(brand)
+            if self.key_configured(brand, user_input["client_id"]):
+                return self.async_abort(reason="already_configured")
+            await self.async_set_unique_id(credential_id(brand, user_input["client_id"]))
             self._abort_if_unique_id_configured()
             if error := await self.validate(brand, user_input):
                 errors["base"] = error
             else:
                 data = {key: value.strip() for key, value in user_input.items()}
-                return self.async_create_entry(title=BRANDS[brand], data=data)
+                data["account_id"] = brand + "_" + uuid4().hex
+                titles = {entry.title for entry in self._async_current_entries()}
+                title, number = BRANDS[brand], 1
+                while title in titles:
+                    number += 1
+                    title = f"{BRANDS[brand]} {number}"
+                return self.async_create_entry(title=title, data=data)
         schema = vol.Schema({
             vol.Required("brand"): SelectSelector(SelectSelectorConfig(
                 options=[{"value": key, "label": name} for key, name in BRANDS.items()],
@@ -71,11 +82,15 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def replace_key(self, step, entry, user_input):
         errors = {}
         if user_input:
+            if self.key_configured(entry.data["brand"], user_input["client_id"], entry.entry_id):
+                return self.async_abort(reason="already_configured")
+            await self.async_set_unique_id(credential_id(entry.data["brand"], user_input["client_id"]))
             if error := await self.validate(entry.data["brand"], user_input):
                 errors["base"] = error
             else:
                 return self.async_update_reload_and_abort(
-                    entry, data_updates={key: user_input[key].strip() for key in ("client_id", "client_secret")},
+                    entry, unique_id=credential_id(entry.data["brand"], user_input["client_id"]),
+                    data_updates={key: user_input[key].strip() for key in ("client_id", "client_secret")},
                 )
         return self.async_show_form(step_id=step, data_schema=vol.Schema(KEY_FIELDS), errors=errors,
                                     description_placeholders={"brand": BRANDS[entry.data["brand"]], "pleos_url": PLEOS_URL})
@@ -84,6 +99,10 @@ class PleosConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         return PleosOptionsFlow()
+
+    def key_configured(self, brand, client_id, exclude=None):
+        return any(entry.entry_id != exclude and entry.data.get("brand") == brand
+                   and entry.data.get("client_id") == client_id.strip() for entry in self._async_current_entries())
 
 
 # Options shown together in the form; entry options stay flat.
@@ -107,7 +126,7 @@ class PleosOptionsFlow(config_entries.OptionsFlowWithReload):
         vehicles = {car_id: car_id for car_id in options["odometer_km_vehicles"]}
         for device in dr.async_entries_for_config_entry(dr.async_get(self.hass), self.config_entry.entry_id):
             for domain, car_id in device.identifiers:
-                if domain == DOMAIN and car_id != self.config_entry.data["brand"] + "_api":
+                if domain == DOMAIN and car_id != account_id(self.config_entry) + "_api":
                     name = device.name_by_user or device.name or car_id
                     vehicles[car_id] = f"{name} ({car_id[-6:]})"
         selectors = {"poll_minutes": minutes(1440), "stale_minutes": minutes(10080), "location": BooleanSelector(),
