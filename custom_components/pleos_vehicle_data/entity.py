@@ -68,7 +68,7 @@ class VehicleEntity(CoordinatorEntity):
 
     @property
     def available(self):
-        if not super().available or not self.car:
+        if (not super().available and not self.coordinator.using_last_data) or not self.car:
             return False
         if self.key == "location":
             present = self.car["location"] is not None
@@ -91,4 +91,7 @@ class VehicleEntity(CoordinatorEntity):
             if age is not None:
                 attrs["data_age_minutes"] = round(age / 60, 1)
                 attrs["data_stale"] = age > self.coordinator.options["stale_minutes"] * 60
-        return attrs | (self.reading.get("attributes", {}) if self.reading else {})
+        attrs |= self.reading.get("attributes", {}) if self.reading else {}
+        if self.coordinator.using_last_data:
+            attrs.update(last_known=True, data_stale=True)
+        return attrs
