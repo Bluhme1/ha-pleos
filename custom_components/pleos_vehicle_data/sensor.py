@@ -16,7 +16,8 @@ from .names import ENTITY_NAMES
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = entry.runtime_data
-    async_add_entities([ConnectionSensor(coordinator)] + ([ArchiveSensor(coordinator)] if coordinator.archive else []))
+    async_add_entities([ConnectionSensor(coordinator), LastSuccessfulPollSensor(coordinator)]
+                       + ([ArchiveSensor(coordinator)] if coordinator.archive else []))
     discover(entry, async_add_entities, "sensor", ReadingSensor)
 
 
@@ -72,6 +73,29 @@ class ConnectionSensor(CoordinatorEntity, SensorEntity):
         if isinstance(self.coordinator.last_exception, ConfigEntryAuthFailed):
             return "key_required"
         return "rate_limited" if self.coordinator.client.retry_at > time.monotonic() else "api_unavailable"
+
+
+class LastSuccessfulPollSensor(CoordinatorEntity, SensorEntity):
+    """When this account last completed a poll without request errors."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = "timestamp"
+    _attr_translation_key = "last_successful_poll"
+    suggested_object_id = ENTITY_NAMES["sensor"]["last_successful_poll"]
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = coordinator.brand + "_last_successful_poll"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, coordinator.brand + "_api")})
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        return self.coordinator.last_successful_poll
 
 
 class ArchiveSensor(CoordinatorEntity, SensorEntity):

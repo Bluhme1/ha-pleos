@@ -113,6 +113,7 @@ Each manufacturer entry creates an **API device** (for example *Kia API*) and on
 | --- | --- | --- |
 | API device | **Connection** | `connected`, `no_vehicles` (the key works but grants no car; see [No vehicles](#no-vehicles)), `key_required` (replace the personal key), `api_unavailable` (Pleos could not be reached) or `rate_limited` (Pleos asked to slow down; requests pause until it allows them again) |
 | API device | **Archive** | Only when the archive is enabled: `ok` or `error`, with the folder, last write and last error |
+| API device | **Last successful poll** | When Home Assistant last completed this account's poll without request errors. This is the fetch completion time, not when the car uploaded its data. |
 | Car | Readings | One sensor or binary sensor per value the API returns, for example **Battery level**, **Odometer**, **Front left door** |
 | Car | **(last trip)** sensors | The latest trip's final sample per trip field, with summaries (see above) |
 | Car | **Trip** | Event entity firing once per trip; see [Trip event entity](#trip-event-entity) |
@@ -120,6 +121,8 @@ Each manufacturer entry creates an **API device** (for example *Kia API*) and on
 | Car | **Vehicle information** | Diagnostic: powertrain type, with VIN, model and every other Get Vehicles field as attributes |
 | Car | ***Endpoint* API** | Diagnostic, one per endpoint: `available`, `no_data`, `error` or `disabled`, with the raw response, query and rejected values (see above) |
 | Car | ***Endpoint* last reported**, ***Endpoint* data age** | Diagnostic, per status endpoint: when the car last reported that data and how old it is |
+
+**Last successful poll** advances only when the vehicle list and all endpoints requested in that poll finish without errors. Disabled endpoints, trip data reused between scheduled trip polls, and an API `no_data` result do not count as failures. Authentication, connection, rate-limit and individual endpoint errors leave the timestamp unchanged. It remains visible during failures and starts unknown after setup/reload until a poll succeeds. Check each car's **last reported** and **data age** sensors for the age of the actual vehicle readings; a successful poll can return old data.
 
 ### Units
 

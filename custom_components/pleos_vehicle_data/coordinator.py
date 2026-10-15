@@ -40,6 +40,7 @@ class PleosCoordinator(DataUpdateCoordinator):
         self.statistics = TripStatistics(hass, entry.entry_id)
         self.fetched_trips = []  # [(car_id, endpoint, data)] returned in the running poll.
         self.ranges = RangeCache(hass, entry.entry_id)
+        self.last_successful_poll = None
 
     async def _async_update_data(self):
         try:
@@ -80,6 +81,9 @@ class PleosCoordinator(DataUpdateCoordinator):
                     self.trips.remember(car_id, now, car)
                 self.trips.cache = {car_id: cached for car_id, cached in self.trips.cache.items()
                                     if car_id in result["cars"]}
+            if all(car["readings"][identifier(endpoint) + "_api"]["value"] != "error"
+                   for car in result["cars"].values() for endpoint in ENDPOINTS):
+                self.last_successful_poll = datetime.now(timezone.utc)
             return result
         except AuthError:
             raise ConfigEntryAuthFailed("Generate a new Pleos personal API key and replace both credentials") from None

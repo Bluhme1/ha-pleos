@@ -467,6 +467,9 @@
       },
       "vehicle_information": {
         "name": "Vehicle information"
+      },
+      "last_successful_poll": {
+        "name": "Last successful poll"
       }
     },
     "binary_sensor": {
