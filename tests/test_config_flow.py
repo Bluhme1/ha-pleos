@@ -9,7 +9,7 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from custom_components.pleos_vehicle_data import async_setup_entry
 from custom_components.pleos_vehicle_data.account import account_id, credential_id
-from custom_components.pleos_vehicle_data.api import ApiError, AuthError, PleosClient
+from pleos_client import ApiError, AuthError, PleosClient
 from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow, PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN
 from custom_components.pleos_vehicle_data.data import vehicle_id
@@ -184,6 +184,7 @@ class ConfigFlowTests(HomeAssistantTestCase):
         with patch("custom_components.pleos_vehicle_data.async_get_clientsession", return_value=MagicMock()), patch.object(PleosClient, "vehicles", AsyncMock(return_value=[])), patch.object(self.hass.config_entries, "async_forward_entry_setups", AsyncMock()):
             await async_setup_entry(self.hass, self.entry)
         self.assertEqual(self.entry.runtime_data.client.credentials["clientId"], NEW["client_id"])
+        self.assertIsInstance(self.entry.runtime_data.client, PleosClient)
         self.assertIsNone(self.entry.runtime_data.client.token)
         await self.entry.runtime_data.async_shutdown()
 

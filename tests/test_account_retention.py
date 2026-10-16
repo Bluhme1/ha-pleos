@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from custom_components.pleos_vehicle_data.api import ApiError, AuthError
+from pleos_client import ApiError, AuthError
 from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySensor
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import vehicle_id

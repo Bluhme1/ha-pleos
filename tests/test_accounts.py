@@ -11,7 +11,7 @@ from homeassistant.helpers import config_validation as cv, device_registry, enti
 from homeassistant.helpers.entity_platform import EntityPlatform
 
 from custom_components.pleos_vehicle_data.account import account_id, credential_id
-from custom_components.pleos_vehicle_data.api import PleosClient
+from pleos_client import PleosClient
 from custom_components.pleos_vehicle_data.config_flow import PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import DOMAIN
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator

@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import PleosClient
+from pleos_client import PleosClient
 from .archive import archive_store
 from .const import DOMAIN
 from .coordinator import PleosCoordinator

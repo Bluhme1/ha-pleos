@@ -3,7 +3,7 @@
 from copy import deepcopy
 from unittest.mock import AsyncMock
 
-from custom_components.pleos_vehicle_data.api import ApiError
+from pleos_client import ApiError
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import vehicle_id
 from custom_components.pleos_vehicle_data.sensor import ReadingSensor

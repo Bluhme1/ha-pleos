@@ -2,6 +2,8 @@
 
 A Home Assistant integration for the official Pleos **personal Vehicle Data API**. Supports Hyundai, Kia and Genesis accounts, with one entry per account and a device for each vehicle. Requires Home Assistant **2026.10 or later**.
 
+API communication is provided by the independent [`pleos-client`](https://github.com/jouwdan/pleos-client) Python library. Home Assistant installs the pinned dependency automatically. Entities, polling schedules, retained readings, trip history and diagnostics remain in this integration.
+
 ## Contents
 
 - [Supported vehicles](#supported-vehicles)
