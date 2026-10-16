@@ -9,8 +9,8 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from custom_components.pleos_vehicle_data import async_setup_entry
 from custom_components.pleos_vehicle_data.account import account_id, credential_id
-from custom_components.pleos_vehicle_data.api import AuthError, PleosClient
-from custom_components.pleos_vehicle_data.config_flow import PleosOptionsFlow
+from custom_components.pleos_vehicle_data.api import ApiError, AuthError, PleosClient
+from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow, PleosOptionsFlow
 from custom_components.pleos_vehicle_data.const import BRANDS, DOMAIN
 from custom_components.pleos_vehicle_data.data import vehicle_id
 from custom_components.pleos_vehicle_data.sensor import ConnectionSensor
@@ -19,6 +19,53 @@ from support import CAR, HomeAssistantTestCase, NEW, OLD
 
 
 class ConfigFlowTests(HomeAssistantTestCase):
+    async def test_blank_credentials_do_not_make_requests(self):
+        for credentials in (NEW | {"client_id": "  "}, NEW | {"client_secret": "\t"}):
+            with self.subTest(credentials=credentials), patch.object(PleosClient, "vehicles", AsyncMock()) as request:
+                self.assertEqual(await self.flow().validate("kia", credentials), "invalid_auth")
+                request.assert_not_awaited()
+
+    async def test_user_flow_errors_do_not_create_entries(self):
+        for failure, expected in ((AuthError(), "invalid_auth"),
+                                  (ApiError(0, "connection_failed"), "cannot_connect"),
+                                  (ApiError(429, "429"), "rate_limited")):
+            with self.subTest(expected=expected):
+                flow = self.flow()
+                with patch.object(flow, "_abort_if_unique_id_configured"), patch.object(PleosClient, "vehicles", AsyncMock(side_effect=failure)):
+                    result = await flow.async_step_user(NEW | {"brand": "kia"})
+                self.assertEqual(result["type"], "form")
+                self.assertEqual(result["step_id"], "user")
+                self.assertEqual(result["errors"], {"base": expected})
+                self.assertEqual(self.entry.data, OLD)
+
+    async def test_reauth_and_reconfigure_show_forms_without_requests(self):
+        for source, step, entry_method in (("reauth", "reauth_confirm", "_get_reauth_entry"),
+                                           ("reconfigure", "reconfigure", "_get_reconfigure_entry")):
+            with self.subTest(source=source):
+                flow = self.flow(source)
+                with patch.object(flow, entry_method, return_value=self.entry), patch.object(PleosClient, "vehicles", AsyncMock()) as request:
+                    result = await flow.async_step_reauth(OLD) if source == "reauth" else await flow.async_step_reconfigure()
+                self.assertEqual(result["type"], "form")
+                self.assertEqual(result["step_id"], step)
+                self.assertEqual(result["errors"], {})
+                self.assertEqual(result["description_placeholders"]["brand"], "Kia")
+                request.assert_not_awaited()
+
+    async def test_replacement_connection_errors_preserve_credentials(self):
+        for source in ("reauth", "reconfigure"):
+            for status, expected in ((0, "cannot_connect"), (429, "rate_limited")):
+                with self.subTest(source=source, status=status):
+                    flow = self.flow(source)
+                    entry_method = "_get_reauth_entry" if source == "reauth" else "_get_reconfigure_entry"
+                    with patch.object(flow, entry_method, return_value=self.entry), patch.object(PleosClient, "vehicles", AsyncMock(side_effect=ApiError(status, "fixture"))), patch.object(self.hass.config_entries, "async_schedule_reload") as reload:
+                        result = await flow.async_step_reauth_confirm(NEW) if source == "reauth" else await flow.async_step_reconfigure(NEW)
+                    self.assertEqual(result["errors"], {"base": expected})
+                    self.assertEqual(self.entry.data, OLD)
+                    reload.assert_not_called()
+
+    async def test_options_flow_factory(self):
+        self.assertIsInstance(PleosConfigFlow.async_get_options_flow(self.entry), PleosOptionsFlow)
+
     async def test_coordinator_stops_polling_and_starts_native_reauth(self):
         await self.populate()
         self.client.vehicles.side_effect = AuthError()

@@ -29,7 +29,10 @@ jobs:
       - uses: actions/checkout@v5
       - name: Test against Home Assistant Core
         run: >-
-          docker run --rm --entrypoint python
+          docker run --rm --entrypoint sh
+          -e COVERAGE_FILE=/tmp/.coverage
           -v "$GITHUB_WORKSPACE:/src:ro" -w /src
           ghcr.io/home-assistant/home-assistant:2026.10.1
-          -m unittest discover -s tests -v
+          -c 'python -m coverage run --branch --source=custom_components.pleos_vehicle_data
+          -m unittest discover -s tests -v &&
+          python -m coverage report --include="*/config_flow.py" --fail-under=100'
