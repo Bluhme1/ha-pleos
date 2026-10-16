@@ -9,7 +9,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
 
 from custom_components.pleos_vehicle_data import async_remove_entry
-from custom_components.pleos_vehicle_data.api import ApiError, AuthError
+from pleos_client import ApiError, AuthError
 from custom_components.pleos_vehicle_data.const import DOMAIN, TRIP_CATCH_UP_DAYS, TRIP_MEMORY_DAYS
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import vehicle_id

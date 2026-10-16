@@ -16,7 +16,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .account import account_id, credential_id
-from .api import ApiError, AuthError, PleosClient
+from pleos_client import ApiError, AuthError, PleosClient
 from .const import BRANDS, DEFAULT_OPTIONS, DOMAIN
 
 KEY_FIELDS = {

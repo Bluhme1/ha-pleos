@@ -9,7 +9,7 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import EntityPlatform
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.pleos_vehicle_data.api import ApiError, AuthError
+from pleos_client import ApiError, AuthError
 from custom_components.pleos_vehicle_data.const import DOMAIN
 from custom_components.pleos_vehicle_data.data import vehicle_id
 from custom_components.pleos_vehicle_data.sensor import LastSuccessfulPollSensor, ReadingSensor, async_setup_entry

@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .account import account_id
-from .api import ApiError, AuthError
+from pleos_client import ApiError, AuthError
 from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, SNAPSHOT_ENDPOINTS, TRIP_ENDPOINTS
 from .data import (Rejections, finite_number, identifier, location, new_trips, readings, reported_age, trip_readings,

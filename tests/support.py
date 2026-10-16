@@ -9,7 +9,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry
 
-from custom_components.pleos_vehicle_data.api import PleosClient
+from pleos_client import PleosClient
 from custom_components.pleos_vehicle_data.config_flow import PleosConfigFlow
 from custom_components.pleos_vehicle_data.const import DOMAIN, TRIP_EVENT
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator

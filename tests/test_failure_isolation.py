@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.pleos_vehicle_data.api import ApiError, AuthError
+from pleos_client import ApiError, AuthError
 from custom_components.pleos_vehicle_data.const import DOMAIN, ENDPOINTS
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.sensor import ConnectionSensor

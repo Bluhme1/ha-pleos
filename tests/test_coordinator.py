@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.helpers import device_registry, entity_registry
 
-from custom_components.pleos_vehicle_data.api import ApiError
+from pleos_client import ApiError
 from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySensor
 from custom_components.pleos_vehicle_data.const import DOMAIN
 from custom_components.pleos_vehicle_data.data import vehicle_id

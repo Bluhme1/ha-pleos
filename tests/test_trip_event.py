@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import EntityPlatform
 
 from custom_components.pleos_vehicle_data import async_remove_entry
-from custom_components.pleos_vehicle_data.api import AuthError
+from pleos_client import AuthError
 from custom_components.pleos_vehicle_data.const import DOMAIN
 from custom_components.pleos_vehicle_data.coordinator import PleosCoordinator
 from custom_components.pleos_vehicle_data.data import trip_summary, vehicle_id
