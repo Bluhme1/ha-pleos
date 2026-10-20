@@ -51,7 +51,11 @@ def trip_payload(endpoint):
         *parents, leaf = field.split(".")
         for part in parents:
             node = node.setdefault(part, {})
-        units = {"location.speedUnit": "kph", "tire.pressureUnit": "psi"}
+        units = {"location.speedUnit": "kph", "tire.pressureUnit": "psi",
+                 "isla.optionUsm": "assist", "isla.optionUsm2": "information",
+                 "seatbelt.assistance": "belted", "seatbelt.driver": "unbelted",
+                 "transmission.gear": "p", "lamp.setting": "autoLightSwOn",
+                 **{f"doors.open{side}": "open" for side in ("Assistance", "Driver", "RearLeft", "RearRight")}}
         node[leaf] = [units.get(field, "on") if spec is None else spec.low, units.get(field, "on") if spec is None else spec.low]
     if endpoint == "driving/data":
         trip["odometer"]["value"] = [10, 12]

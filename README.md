@@ -1,5 +1,9 @@
 # Pleos Vehicle Data
 
+[![Validate](https://github.com/jouwdan/ha-pleos/actions/workflows/validate.yml/badge.svg)](https://github.com/jouwdan/ha-pleos/actions/workflows/validate.yml)
+[![Release](https://img.shields.io/github/v/release/jouwdan/ha-pleos)](https://github.com/jouwdan/ha-pleos/releases/latest)
+[![HACS custom integration](https://img.shields.io/badge/HACS-Custom_Integration-41BDF5)](https://www.hacs.xyz/docs/faq/custom_repositories/)
+
 A Home Assistant integration for the official Pleos **personal Vehicle Data API**. Supports Hyundai, Kia and Genesis accounts, with one entry per account and a device for each vehicle. Requires Home Assistant **2026.10 or later**.
 
 API communication is provided by the independent [`pleos-client`](https://github.com/jouwdan/pleos-client) Python library. Home Assistant installs the pinned dependency automatically. Entities, polling schedules, retained readings, trip history and diagnostics remain in this integration.
@@ -35,6 +39,8 @@ The following models and variant labels appear in the [Vehicle Data API compatib
 These are Pleos's labels, including “KONA Electric (HEV)”; the matrix does not specify model years. The integration discovers cars through [Get Vehicles](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/for-private-users/get-vehicles), so other models may work too. Available fields vary by vehicle.
 
 ## Install with HACS
+
+The [default-list submission](https://github.com/hacs/default/pull/11971) is awaiting review. Until it is included, install this as a custom integration:
 
 1. [Install and configure HACS](https://www.hacs.dev/docs/use/download/download/) if required.
 2. Open **HACS → ⋮ → Custom repositories**. Add `https://github.com/jouwdan/ha-pleos` with type **Integration**.
@@ -150,7 +156,71 @@ Ignition, ignition power, high-voltage system power, accessory power, sleep mode
 
 Home Assistant registers these as new entities. Custom entity IDs, names, icons, areas and disabled/hidden settings on the old sensors are not copied; reapply the settings you need. Old sensor entries may remain unavailable and can be removed after you update their references. Existing history is not moved to the new entities. The [example dashboard](examples/dashboard.yaml) uses the new IDs.
 
-Seat heating/ventilation levels, climate mode, door states and **(last trip)** text readings keep their existing sensor entities and values.
+The 0.7.0 release left other text readings unchanged; 0.8.0 extends the conversions below.
+
+### Native entities and upgrading to 0.8.0
+
+**Bonnet**, **Boot** and **Sunroof** are now open/closed binary sensors. Bonnet and boot use Home Assistant's `opening` device class; sunroof uses `window`. Update references from `sensor.<car>_bonnet`, `sensor.<car>_boot` and `sensor.<car>_sunroof` to their new `binary_sensor.*` IDs after updating and restarting Home Assistant. As with the 0.7.0 conversions, reapply customisations to the new entities; old entries and history are not automatically deleted or moved. Their raw states are now `on` (open) and `off` (closed).
+
+Doors, seat heating/ventilation levels, climate mode and detailed charging status are **enum sensors** with predefined states and translated display labels. Their entity IDs stay the same. Door states retain `open`, `closed` and `locked`; seat levels retain `off`, `low`, `middle` and `high`; climate mode retains `manual`, `auto`, `off` and `error`. Unknown values become unavailable instead of being interpreted as off or closed.
+
+**Charging status raw states change in 0.8.0.** Update state comparisons in automations, scripts and templates:
+
+| Previous raw state | New raw state |
+| --- | --- |
+| `notCharging` | `not_charging` |
+| `charging` | `charging` |
+| `fastCharging` | `fast_charging` |
+| `v2lOperating` | `v2l_operating` |
+| `v2lStop` | `v2l_stop` |
+| `v2xOperating` | `v2x_operating` |
+| `reservedCharging` | `reserved_charging` |
+| `wirelessCharging` | `wireless_charging` |
+
+The 17 [documented warning indicators](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-status) each get a `problem` binary sensor, including **Low fuel warning**, **Key battery warning**, **Washer fluid warning**, **Brake fluid warning**, **Engine oil warning**, tyre-pressure warnings and lamp warnings. They show `on` when that warning is reported and `off` when absent from a valid warning list. An empty list clears them all. Missing, invalid or malformed warning data, or a failed status-endpoint request, makes them unavailable. A transient failure of the initial account request still retains the previous whole poll with `last_known: true` and `data_stale: true`, as described above. These indicate what the last vehicle report says, not an independent health check.
+
+The existing **Warnings** sensor still keeps the full list and count, including unrecognised codes. Warning sensors appear only once a valid warning list has been received.
+
+**AC charge limit** and **DC charge limit** are ordinary percentage sensors, not battery-level sensors. This prevents Home Assistant's device-page battery indicator from selecting a charge target such as 100%. Actual **Battery level** and **Traction battery level** retain the battery device class. Charge-limit IDs, values, history and retention during transient failures are preserved.
+
+**Cabin fan speed** keeps its entity ID but becomes an enum: numeric `-1` becomes `auto`, `0` becomes `off`, and `1`–`8` become `level_1`–`level_8`. Update numeric state comparisons. Display labels are Auto, Off and Level 1–8.
+
+Six **(last trip)** readings also move from `sensor.*` to `binary_sensor.*`: **Ignition**, **Driver door**, **Front passenger door**, **Rear left door**, **Rear right door** and **Low fuel warning**. Their suffix remains `_last_trip`; for example, `sensor.<car>_driver_door_last_trip` becomes `binary_sensor.<car>_driver_door_last_trip`. Doors use `on` for open and `off` for closed; ignition and the warning use `on` for active. Reapply customisations and update references as for bonnet/boot/sunroof. These are historical samples, not current vehicle status.
+
+Last-trip **Gear**, **Seat belts**, **Speed limit assist settings**, **Exterior light setting**, **Speed unit** and **Tyre pressure unit** become enums while keeping their IDs. Gear raw states remain `p`, `r`, `n`, `d`, displayed as Park, Reverse, Neutral, Drive. Seat belts retain `belted`/`unbelted`; an unfastened belt does not establish occupancy or danger. Light-setting raw states change: `lightSwOff` → `off`, `tailSwOn` → `tail_lights`, `headLampLowSwOn` → `headlamps`, `autoLightSwOn` → `auto`. The **Trip** event's text attributes and raw trip events retain their original API values.
+
+The full entity mapping is:
+
+| Readings | Home Assistant representation |
+| --- | --- |
+| Actual charge percentages | `battery` measurement sensors, % |
+| AC/DC charge limits; fuel level | Percentage sensors; target icons for charge limits and fuel-pump icon for fuel |
+| Plug connection; charging | `plug` and `battery_charging` binary sensors |
+| Bonnet, boot; sunroof | `opening` and `window` binary sensors |
+| Ignition and ignition/accessory power | `power` binary sensors |
+| Climate/freezer operation | `running` binary sensors |
+| Sleep mode, in park, defrost, steering-wheel heating | On/off binary sensors with matching icons |
+| Doors, seat levels, climate mode, fan level, charging status | Enum sensors preserving the documented states |
+| Individual warnings | `problem` binary sensors; full warning list retained separately |
+| Ambient, freezer and oil temperatures; cabin target temperature | `temperature` sensors; the cabin target is a setting, not a measurement |
+| Tyre pressures; battery voltage | `pressure` and `voltage` sensors with validated units |
+| Odometer | `distance` sensor with `total` state class for lifetime mileage |
+| Remaining ranges; altitude | `distance` sensors; ranges are estimates |
+| Speed and wheel speeds | `speed` sensors |
+| Charge time remaining; trip duration | `duration` sensors |
+| GPS location; latitude/longitude; heading | GPS tracker; degree-valued coordinates; angle measurement for heading |
+| Coordinate system; trip speed/pressure unit | Diagnostic enums |
+| Trip ignition, doors and low-fuel warning | Historical `power`, `door` and `problem` binary sensors |
+| Trip gear, belts, ISLA and light settings | Historical enums |
+| RPM, acceleration, steering angle and angular rates | Numeric sensors with their documented units; HA has no matching device class for these units |
+| Battery capacity | Plain numeric sensor: Pleos does not document its energy unit, so none is guessed |
+| API connection/endpoint/archive status; reporting times | Diagnostic enums and timestamp sensors |
+| Vehicle information; data age | Diagnostic text/attributes and minutes |
+| Undocumented fields | Plain readings until their meaning and units are documented |
+
+Only current measurements generate measurement statistics. Charge targets, cabin temperature targets, range/time estimates, capacity, coordinates, data age and delayed **(last trip)** readings no longer generate new measurement statistics. Their ordinary state history remains; existing statistics are not deleted or rewritten. Heading uses angular statistics so 359° and 1° average around north. Odometer uses `total` because lifetime mileage does not periodically reset. The separate [trip statistics](#trip-statistics) continue to record distance, driving time and speed against the hour driven.
+
+These remain read-only entities. The API does not support operating locks, windows, heating or fans, so they are not exposed as controllable switches, covers, locks, fans or climate entities.
 
 ### Units
 
@@ -158,7 +228,7 @@ Status readings use the unit returned by the API. For example, the [odometer res
 
 Some vehicles return a kilometre odometer value labelled `mile` ([#6](https://github.com/jouwdan/ha-pleos/issues/6)). If **Driving status API → data.odometer** contains `5177.5` with unit `mile`, but the car shows about `3217` miles, select that car under **Configure → Vehicle status → Correct odometer kilometres labelled as miles**. Home Assistant will interpret the value as `5177.5 km` and display about `3217.15 mi` when miles are selected. Raw API diagnostics and archives stay unchanged; the corrected Odometer entity includes `api_unit_of_measurement: mi`.
 
-Leave this option empty for correctly reported odometers. It applies only to the selected cars' snapshot odometers labelled miles; trip data and other units are unaffected. Clear the selection if Pleos fixes the underlying data. Existing history and statistics are not rewritten. The lower corrected reading can be interpreted as a reset by cumulative statistics, so check **Developer tools → Statistics** for affected odometer totals after enabling it.
+Leave this option empty for correctly reported odometers. It applies only to the selected cars' snapshot odometers labelled miles; trip data and other units are unaffected. Clear the selection if Pleos fixes the underlying data. Existing history and statistics are not rewritten. A correction changes the recorded total, so check **Developer tools → Statistics** for affected odometer totals after enabling it.
 
 Home Assistant converts readings for your unit preferences. To display miles, open the odometer entity's settings and set **Unit of measurement** to **mi**. This converts both the number and label: **1,609.344 km = 1,000 mi**. If a reading differs from the car or app, compare its value and unit with `data.odometer` on the **Driving status API** sensor and include both in an issue report.
 

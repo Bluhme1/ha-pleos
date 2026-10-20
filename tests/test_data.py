@@ -131,7 +131,7 @@ class SpecTests(unittest.TestCase):
         self.assertIsNone(Spec(-1, 8, integer=True).check(2.5, None))
         enum = Spec(0, 2, integer=True, options=("a", "b", "c"))
         self.assertEqual((enum.check(1, None), enum.metadata()), ("b", {"device_class": "enum", "options": ["a", "b", "c"]}))
-        self.assertEqual(Spec(0, 1, unit="%", device_class="battery").metadata(), {"unit_of_measurement": "%", "device_class": "battery"})
+        self.assertEqual(Spec(0, 1, unit="%", device_class="battery").metadata(), {"unit_of_measurement": "%", "device_class": "battery", "state_class": "measurement"})
 
     def test_snapshot_spec_scopes_by_endpoint_and_path(self):
         self.assertEqual(snapshot_spec("status", ("tire", "row1", "left")).device_class, "pressure")

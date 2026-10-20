@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Connect your vehicles",
-        "description": "Get a **personal** API key from [Pleos Playground]({pleos_url}) \u2192 account menu \u2192 **My Vehicle Data API** \u2192 select manufacturer \u2192 **Get API Key** \u2192 sign into your manufacturer account. [Step-by-step guide]({key_guide_url}).\n\nSelect the same manufacturer below and paste both credentials. Keys must be replaced manually when they expire; check the expiry shown in Pleos. Only data shared by your vehicle will appear.",
+        "description": "Get a **personal** API key from [Pleos Playground]({pleos_url}) → account menu → **My Vehicle Data API** → select manufacturer → **Get API Key** → sign into your manufacturer account. [Step-by-step guide]({key_guide_url}).\n\nSelect the same manufacturer below and paste both credentials. Keys must be replaced manually when they expire; check the expiry shown in Pleos. Only data shared by your vehicle will appear.",
         "data": {
           "brand": "Manufacturer",
           "client_id": "Client ID",
@@ -17,7 +17,7 @@
       },
       "reauth_confirm": {
         "title": "Replace your {brand} API key",
-        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) \u2192 My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
+        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) → My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client Secret"
@@ -29,7 +29,7 @@
       },
       "reconfigure": {
         "title": "Update your {brand} API key",
-        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) \u2192 My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
+        "description": "Generate a new {brand} personal API key in [Pleos Playground]({pleos_url}) → My Vehicle Data API, then paste both new fields below. Personal keys require manual renewal when they expire. Your existing devices and entity IDs will be kept for the same cars.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client Secret"
@@ -117,7 +117,17 @@
         "name": "Battery level"
       },
       "batteries_charge_status": {
-        "name": "Charging status"
+        "name": "Charging status",
+        "state": {
+          "not_charging": "Not charging",
+          "charging": "Slow charging",
+          "fast_charging": "Fast charging",
+          "v2l_operating": "V2L operating",
+          "v2l_stop": "V2L stopped",
+          "v2x_operating": "V2X operating",
+          "reserved_charging": "Scheduled charging",
+          "wireless_charging": "Wireless charging"
+        }
       },
       "batteries_charge_targetstateofcharge_quick": {
         "name": "DC charge limit"
@@ -156,23 +166,41 @@
       "driving_data_api": {
         "name": "Driving trips API"
       },
-      "driving_data_ignition_status": {
-        "name": "Ignition (last trip)"
-      },
       "driving_data_isla_optionusm": {
-        "name": "Speed limit assist setting (last trip)"
+        "name": "Speed limit assist setting (last trip)",
+        "state": {
+          "none": "None",
+          "off": "Off",
+          "warning": "Warning",
+          "assist": "Assist"
+        }
       },
       "driving_data_isla_optionusm2": {
-        "name": "Speed limit assist secondary setting (last trip)"
+        "name": "Speed limit assist secondary setting (last trip)",
+        "state": {
+          "none": "None",
+          "off": "Off",
+          "information": "Information",
+          "warning": "Warning",
+          "assist": "Assist"
+        }
       },
       "driving_data_odometer_value": {
         "name": "Odometer (last trip)"
       },
       "driving_data_seatbelt_assistance": {
-        "name": "Passenger seat belt (last trip)"
+        "name": "Passenger seat belt (last trip)",
+        "state": {
+          "belted": "Belted",
+          "unbelted": "Unbelted"
+        }
       },
       "driving_data_seatbelt_driver": {
-        "name": "Driver seat belt (last trip)"
+        "name": "Driver seat belt (last trip)",
+        "state": {
+          "belted": "Belted",
+          "unbelted": "Unbelted"
+        }
       },
       "driving_data_steeringwheel_angle": {
         "name": "Steering wheel angle (last trip)"
@@ -181,7 +209,13 @@
         "name": "Steering wheel turning speed (last trip)"
       },
       "driving_data_transmission_gear": {
-        "name": "Gear (last trip)"
+        "name": "Gear (last trip)",
+        "state": {
+          "p": "Park",
+          "r": "Reverse",
+          "n": "Neutral",
+          "d": "Drive"
+        }
       },
       "driving_data_trip_distance": {
         "name": "Trip distance (last trip)"
@@ -209,6 +243,9 @@
       },
       "freezer_reported_at": {
         "name": "Freezer status last reported"
+      },
+      "last_successful_poll": {
+        "name": "Last successful poll"
       },
       "locations_api": {
         "name": "Location API"
@@ -292,7 +329,11 @@
         "name": "Speed (last trip)"
       },
       "speed_location_speedunit": {
-        "name": "Speed unit (last trip)"
+        "name": "Speed unit (last trip)",
+        "state": {
+          "kph": "km/h",
+          "mph": "mph"
+        }
       },
       "speed_trip_duration": {
         "name": "Speed trips duration"
@@ -316,10 +357,28 @@
         "name": "Vehicle status API"
       },
       "status_climatecontrol_mode": {
-        "name": "Climate mode"
+        "name": "Climate mode",
+        "state": {
+          "manual": "Manual",
+          "auto": "Automatic",
+          "off": "Off",
+          "error": "Error"
+        }
       },
       "status_climatecontrol_speed": {
-        "name": "Cabin fan speed"
+        "name": "Cabin fan speed",
+        "state": {
+          "auto": "Auto",
+          "off": "Off",
+          "level_1": "Level 1",
+          "level_2": "Level 2",
+          "level_3": "Level 3",
+          "level_4": "Level 4",
+          "level_5": "Level 5",
+          "level_6": "Level 6",
+          "level_7": "Level 7",
+          "level_8": "Level 8"
+        }
       },
       "status_climatecontrol_temperature": {
         "name": "Cabin target temperature"
@@ -330,20 +389,14 @@
       "status_data_api": {
         "name": "Vehicle status trips API"
       },
-      "status_data_doors_openassistance": {
-        "name": "Front passenger door (last trip)"
-      },
-      "status_data_doors_opendriver": {
-        "name": "Driver door (last trip)"
-      },
-      "status_data_doors_openrearleft": {
-        "name": "Rear left door (last trip)"
-      },
-      "status_data_doors_openrearright": {
-        "name": "Rear right door (last trip)"
-      },
       "status_data_lamp_setting": {
-        "name": "Exterior light setting (last trip)"
+        "name": "Exterior light setting (last trip)",
+        "state": {
+          "off": "Off",
+          "tail_lights": "Tail lights",
+          "headlamps": "Headlamps",
+          "auto": "Auto"
+        }
       },
       "status_data_outsidetemperature_value": {
         "name": "Outside temperature (last trip)"
@@ -361,7 +414,12 @@
         "name": "Rear right tyre pressure (last trip)"
       },
       "status_data_tire_pressureunit": {
-        "name": "Tyre pressure unit (last trip)"
+        "name": "Tyre pressure unit (last trip)",
+        "state": {
+          "psi": "psi",
+          "kpa": "kPa",
+          "bar": "bar"
+        }
       },
       "status_data_trip_duration": {
         "name": "Vehicle status trips duration"
@@ -369,23 +427,37 @@
       "status_data_trip_start": {
         "name": "Vehicle status trips start"
       },
-      "status_data_warnings_lowfuellevel": {
-        "name": "Low fuel warning (last trip)"
-      },
       "status_doors_row1_left": {
-        "name": "Front left door"
+        "name": "Front left door",
+        "state": {
+          "open": "Open",
+          "closed": "Closed",
+          "locked": "Locked"
+        }
       },
       "status_doors_row1_right": {
-        "name": "Front right door"
+        "name": "Front right door",
+        "state": {
+          "open": "Open",
+          "closed": "Closed",
+          "locked": "Locked"
+        }
       },
       "status_doors_row2_left": {
-        "name": "Rear left door"
+        "name": "Rear left door",
+        "state": {
+          "open": "Open",
+          "closed": "Closed",
+          "locked": "Locked"
+        }
       },
       "status_doors_row2_right": {
-        "name": "Rear right door"
-      },
-      "status_hood": {
-        "name": "Bonnet"
+        "name": "Rear right door",
+        "state": {
+          "open": "Open",
+          "closed": "Closed",
+          "locked": "Locked"
+        }
       },
       "status_outsidetemperature": {
         "name": "Outside temperature"
@@ -394,31 +466,76 @@
         "name": "Vehicle status last reported"
       },
       "status_seats_row1_left_heat": {
-        "name": "Front left seat heating"
+        "name": "Front left seat heating",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row1_left_ventilation": {
-        "name": "Front left seat ventilation"
+        "name": "Front left seat ventilation",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row1_right_heat": {
-        "name": "Front right seat heating"
+        "name": "Front right seat heating",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row1_right_ventilation": {
-        "name": "Front right seat ventilation"
+        "name": "Front right seat ventilation",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row2_left_heat": {
-        "name": "Rear left seat heating"
+        "name": "Rear left seat heating",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row2_left_ventilation": {
-        "name": "Rear left seat ventilation"
+        "name": "Rear left seat ventilation",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row2_right_heat": {
-        "name": "Rear right seat heating"
+        "name": "Rear right seat heating",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_seats_row2_right_ventilation": {
-        "name": "Rear right seat ventilation"
-      },
-      "status_sunroof": {
-        "name": "Sunroof"
+        "name": "Rear right seat ventilation",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "middle": "Medium",
+          "high": "High"
+        }
       },
       "status_tire_row1_left": {
         "name": "Front left tyre pressure"
@@ -432,17 +549,11 @@
       "status_tire_row2_right": {
         "name": "Rear right tyre pressure"
       },
-      "status_trunk": {
-        "name": "Boot"
-      },
       "status_warnings": {
         "name": "Warnings"
       },
       "vehicle_information": {
         "name": "Vehicle information"
-      },
-      "last_successful_poll": {
-        "name": "Last successful poll"
       }
     },
     "binary_sensor": {
@@ -476,11 +587,89 @@
       "status_climatecontrol_status": {
         "name": "Climate control"
       },
+      "status_hood": {
+        "name": "Bonnet"
+      },
       "status_steeringwheelheat": {
         "name": "Steering wheel heating"
       },
+      "status_sunroof": {
+        "name": "Sunroof"
+      },
+      "status_trunk": {
+        "name": "Boot"
+      },
+      "status_warning_brakeoil": {
+        "name": "Brake fluid warning"
+      },
+      "status_warning_engineoil": {
+        "name": "Engine oil warning"
+      },
+      "status_warning_frontheadlamp": {
+        "name": "Headlamp warning"
+      },
+      "status_warning_frontleftturnsignal": {
+        "name": "Front left turn signal warning"
+      },
+      "status_warning_frontrightturnsignal": {
+        "name": "Front right turn signal warning"
+      },
+      "status_warning_lowfuel": {
+        "name": "Low fuel warning"
+      },
+      "status_warning_rearleftstoplamp": {
+        "name": "Rear left brake light warning"
+      },
+      "status_warning_rearleftturnsignal": {
+        "name": "Rear left turn signal warning"
+      },
+      "status_warning_rearrightstoplamp": {
+        "name": "Rear right brake light warning"
+      },
+      "status_warning_rearrightturnsignal": {
+        "name": "Rear right turn signal warning"
+      },
+      "status_warning_smartkeybattery": {
+        "name": "Key battery warning"
+      },
+      "status_warning_tirepressurefrontleft": {
+        "name": "Front left tyre pressure warning"
+      },
+      "status_warning_tirepressurefrontright": {
+        "name": "Front right tyre pressure warning"
+      },
+      "status_warning_tirepressurelow": {
+        "name": "Tyre pressure warning"
+      },
+      "status_warning_tirepressurerearleft": {
+        "name": "Rear left tyre pressure warning"
+      },
+      "status_warning_tirepressurerearright": {
+        "name": "Rear right tyre pressure warning"
+      },
+      "status_warning_washfluid": {
+        "name": "Washer fluid warning"
+      },
       "status_windshield_defrost": {
         "name": "Windscreen defrost"
+      },
+      "driving_data_ignition_status": {
+        "name": "Ignition (last trip)"
+      },
+      "status_data_doors_openassistance": {
+        "name": "Front passenger door (last trip)"
+      },
+      "status_data_doors_opendriver": {
+        "name": "Driver door (last trip)"
+      },
+      "status_data_doors_openrearleft": {
+        "name": "Rear left door (last trip)"
+      },
+      "status_data_doors_openrearright": {
+        "name": "Rear right door (last trip)"
+      },
+      "status_data_warnings_lowfuellevel": {
+        "name": "Low fuel warning (last trip)"
       }
     },
     "device_tracker": {
