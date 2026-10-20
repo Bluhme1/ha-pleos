@@ -41,9 +41,9 @@ class ApiParityTests(unittest.TestCase):
                     {"type": "acc", "status": "off"}]},
                 "sleepMode": "on", "odometer": {"value": 1000, "unit": "mile"},
                 "transmission": {"parkingPosition": True},
-            }, {"ignition_status": "off", "ignition_ignitiondetails_ign1_status": "off",
-                "ignition_ignitiondetails_ign3_status": "on", "ignition_ignitiondetails_acc_status": "off",
-                "sleepmode": "on", "odometer": 1000, "transmission_parkingposition": "ON"}),
+            }, {"ignition_status": "OFF", "ignition_ignitiondetails_ign1_status": "OFF",
+                "ignition_ignitiondetails_ign3_status": "ON", "ignition_ignitiondetails_acc_status": "OFF",
+                "sleepmode": "ON", "odometer": 1000, "transmission_parkingposition": "ON"}),
             "status": ({
                 "doors": [{"left": "locked", "right": "closed"}, {"left": "open", "right": "locked"}],
                 "hood": "closed", "trunk": "open", "sunroof": "closed",
@@ -61,9 +61,9 @@ class ApiParityTests(unittest.TestCase):
                 "doors_row2_left": "open", "doors_row2_right": "locked",
                 "hood": "closed", "trunk": "open", "sunroof": "closed",
                 "tire_row1_left": 360, "tire_row1_right": 350, "tire_row2_left": 3.6, "tire_row2_right": 3.5,
-                "warnings": "washFluid, lowFuel", "climatecontrol_mode": "auto", "climatecontrol_status": "on",
-                "climatecontrol_speed": -1, "climatecontrol_temperature": 70, "windshield_defrost": "off",
-                "steeringwheelheat": "on", "seats_row1_left_heat": "low", "seats_row1_left_ventilation": "off",
+                "warnings": "washFluid, lowFuel", "climatecontrol_mode": "auto", "climatecontrol_status": "ON",
+                "climatecontrol_speed": -1, "climatecontrol_temperature": 70, "windshield_defrost": "OFF",
+                "steeringwheelheat": "ON", "seats_row1_left_heat": "low", "seats_row1_left_ventilation": "off",
                 "seats_row1_right_heat": "off", "seats_row1_right_ventilation": "high",
                 "seats_row2_left_heat": "middle", "seats_row2_left_ventilation": "off",
                 "seats_row2_right_heat": "high", "seats_row2_right_ventilation": "off", "outsidetemperature": 15}),
@@ -72,7 +72,7 @@ class ApiParityTests(unittest.TestCase):
                           {"location_latitude": 0, "location_longitude": 0, "location_altitude": 20,
                            "location_heading": 90, "location_speed": 12, "location_type": "WGS84"}),
             "freezer": ({"freezer": {"status": "on", "temperature": -20}},
-                        {"freezer_status": "on", "freezer_temperature": -20}),
+                        {"freezer_status": "ON", "freezer_temperature": -20}),
         }
         for endpoint, (payload, expected) in cases.items():
             with self.subTest(endpoint=endpoint):

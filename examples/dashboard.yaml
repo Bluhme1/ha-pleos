@@ -238,39 +238,39 @@ views:
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_ignition
+            entity: binary_sensor.my_car_ignition
             name: Ignition
             icon: mdi:key-variant
             visibility:
               - condition: state
-                entity: sensor.my_car_ignition
+                entity: binary_sensor.my_car_ignition
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_accessory_power
+            entity: binary_sensor.my_car_accessory_power
             name: ACC
             icon: mdi:power-socket-eu
             visibility:
               - condition: state
-                entity: sensor.my_car_accessory_power
+                entity: binary_sensor.my_car_accessory_power
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_high_voltage_system_power
+            entity: binary_sensor.my_car_high_voltage_system_power
             name: HV system
             icon: mdi:flash-triangle
             visibility:
               - condition: state
-                entity: sensor.my_car_high_voltage_system_power
+                entity: binary_sensor.my_car_high_voltage_system_power
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_sleep_mode
+            entity: binary_sensor.my_car_sleep_mode
             name: Sleep mode
             icon: mdi:sleep
             visibility:
               - condition: state
-                entity: sensor.my_car_sleep_mode
+                entity: binary_sensor.my_car_sleep_mode
                 state_not: "unknown"
 
           - type: tile
@@ -424,12 +424,12 @@ views:
             heading: Climate
             icon: mdi:air-conditioner
           - type: tile
-            entity: sensor.my_car_climate_control
+            entity: binary_sensor.my_car_climate_control
             name: Climate
             icon: mdi:fan
             visibility:
               - condition: state
-                entity: sensor.my_car_climate_control
+                entity: binary_sensor.my_car_climate_control
                 state_not: "unknown"
 
           - type: tile
@@ -460,21 +460,21 @@ views:
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_windscreen_defrost
+            entity: binary_sensor.my_car_windscreen_defrost
             name: Defrost
             icon: mdi:car-defrost-front
             visibility:
               - condition: state
-                entity: sensor.my_car_windscreen_defrost
+                entity: binary_sensor.my_car_windscreen_defrost
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_steering_wheel_heating
+            entity: binary_sensor.my_car_steering_wheel_heating
             name: Steering wheel
             icon: mdi:steering
             visibility:
               - condition: state
-                entity: sensor.my_car_steering_wheel_heating
+                entity: binary_sensor.my_car_steering_wheel_heating
                 state_not: "unknown"
 
 

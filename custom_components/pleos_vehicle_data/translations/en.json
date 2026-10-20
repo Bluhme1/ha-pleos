@@ -192,35 +192,17 @@
       "driving_data_trip_start": {
         "name": "Driving trips start"
       },
-      "driving_ignition_ignitiondetails_acc_status": {
-        "name": "Accessory power"
-      },
-      "driving_ignition_ignitiondetails_ign1_status": {
-        "name": "Ignition power"
-      },
-      "driving_ignition_ignitiondetails_ign3_status": {
-        "name": "High-voltage system power"
-      },
-      "driving_ignition_status": {
-        "name": "Ignition"
-      },
       "driving_odometer": {
         "name": "Odometer"
       },
       "driving_reported_at": {
         "name": "Driving status last reported"
       },
-      "driving_sleepmode": {
-        "name": "Sleep mode"
-      },
       "freezer_api": {
         "name": "Freezer status API"
       },
       "freezer_data_age": {
         "name": "Freezer status data age"
-      },
-      "freezer_freezer_status": {
-        "name": "Freezer"
       },
       "freezer_freezer_temperature": {
         "name": "Freezer temperature"
@@ -339,9 +321,6 @@
       "status_climatecontrol_speed": {
         "name": "Cabin fan speed"
       },
-      "status_climatecontrol_status": {
-        "name": "Climate control"
-      },
       "status_climatecontrol_temperature": {
         "name": "Cabin target temperature"
       },
@@ -438,9 +417,6 @@
       "status_seats_row2_right_ventilation": {
         "name": "Rear right seat ventilation"
       },
-      "status_steeringwheelheat": {
-        "name": "Steering wheel heating"
-      },
       "status_sunroof": {
         "name": "Sunroof"
       },
@@ -462,9 +438,6 @@
       "status_warnings": {
         "name": "Warnings"
       },
-      "status_windshield_defrost": {
-        "name": "Windscreen defrost"
-      },
       "vehicle_information": {
         "name": "Vehicle information"
       },
@@ -479,8 +452,35 @@
       "batteries_charge_plugin": {
         "name": "Plugged in"
       },
+      "driving_ignition_ignitiondetails_acc_status": {
+        "name": "Accessory power"
+      },
+      "driving_ignition_ignitiondetails_ign1_status": {
+        "name": "Ignition power"
+      },
+      "driving_ignition_ignitiondetails_ign3_status": {
+        "name": "High-voltage system power"
+      },
+      "driving_ignition_status": {
+        "name": "Ignition"
+      },
+      "driving_sleepmode": {
+        "name": "Sleep mode"
+      },
       "driving_transmission_parkingposition": {
         "name": "In park"
+      },
+      "freezer_freezer_status": {
+        "name": "Freezer"
+      },
+      "status_climatecontrol_status": {
+        "name": "Climate control"
+      },
+      "status_steeringwheelheat": {
+        "name": "Steering wheel heating"
+      },
+      "status_windshield_defrost": {
+        "name": "Windscreen defrost"
       }
     },
     "device_tracker": {
