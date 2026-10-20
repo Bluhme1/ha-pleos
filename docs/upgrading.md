@@ -1,0 +1,52 @@
+# Upgrading
+
+[Back to setup guide](../README.md)
+
+Read the notes for each version you are crossing, including both sections below when upgrading from 0.6.0 or earlier. Restart Home Assistant after updating.
+
+## Native entities and upgrading to 0.8.0
+
+**Bonnet**, **Boot** and **Sunroof** are now open/closed binary sensors. Bonnet and boot use Home Assistant's `opening` device class; sunroof uses `window`. Update references from `sensor.<car>_bonnet`, `sensor.<car>_boot` and `sensor.<car>_sunroof` to their new `binary_sensor.*` IDs after updating and restarting Home Assistant. As with the 0.7.0 conversions, reapply customisations to the new entities; old entries and history are not automatically deleted or moved. Their raw states are now `on` (open) and `off` (closed).
+
+Doors, seat heating/ventilation levels, climate mode and detailed charging status are **enum sensors** with predefined states and translated display labels. Their entity IDs stay the same. Door states retain `open`, `closed` and `locked`; seat levels retain `off`, `low`, `middle` and `high`; climate mode retains `manual`, `auto`, `off` and `error`. Unknown values become unavailable instead of being interpreted as off or closed.
+
+**Charging status raw states change in 0.8.0.** Update state comparisons in automations, scripts and templates:
+
+| Previous raw state | New raw state |
+| --- | --- |
+| `notCharging` | `not_charging` |
+| `charging` | `charging` |
+| `fastCharging` | `fast_charging` |
+| `v2lOperating` | `v2l_operating` |
+| `v2lStop` | `v2l_stop` |
+| `v2xOperating` | `v2x_operating` |
+| `reservedCharging` | `reserved_charging` |
+| `wirelessCharging` | `wireless_charging` |
+
+The 17 [documented warning indicators](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-status) each get a `problem` binary sensor, including **Low fuel warning**, **Key battery warning**, **Washer fluid warning**, **Brake fluid warning**, **Engine oil warning**, tyre-pressure warnings and lamp warnings. They show `on` when that warning is reported and `off` when absent from a valid warning list. An empty list clears them all. Missing, invalid or malformed warning data, or a failed status-endpoint request, makes them unavailable. A transient failure of the initial account request still retains the previous whole poll with `last_known: true` and `data_stale: true`, as described in [Data freshness and retained readings](entities.md#data-freshness-and-retained-readings). These indicate what the last vehicle report says, not an independent health check.
+
+The existing **Warnings** sensor still keeps the full list and count, including unrecognised codes. Warning sensors appear only once a valid warning list has been received.
+
+**AC charge limit** and **DC charge limit** are ordinary percentage sensors, not battery-level sensors. This prevents Home Assistant's device-page battery indicator from selecting a charge target such as 100%. Actual **Battery level** and **Traction battery level** retain the battery device class. Charge-limit IDs, values, history and retention during transient failures are preserved.
+
+**Cabin fan speed** keeps its entity ID but becomes an enum: numeric `-1` becomes `auto`, `0` becomes `off`, and `1`–`8` become `level_1`–`level_8`. Update numeric state comparisons. Display labels are Auto, Off and Level 1–8.
+
+Six **(last trip)** readings also move from `sensor.*` to `binary_sensor.*`: **Ignition**, **Driver door**, **Front passenger door**, **Rear left door**, **Rear right door** and **Low fuel warning**. Their suffix remains `_last_trip`; for example, `sensor.<car>_driver_door_last_trip` becomes `binary_sensor.<car>_driver_door_last_trip`. Doors use `on` for open and `off` for closed; ignition and the warning use `on` for active. Reapply customisations and update references as for bonnet/boot/sunroof. These are historical samples, not current vehicle status.
+
+Last-trip **Gear**, **Seat belts**, **Speed limit assist settings**, **Exterior light setting**, **Speed unit** and **Tyre pressure unit** become enums while keeping their IDs. Gear raw states remain `p`, `r`, `n`, `d`, displayed as Park, Reverse, Neutral, Drive. Seat belts retain `belted`/`unbelted`; an unfastened belt does not establish occupancy or danger. Light-setting raw states change: `lightSwOff` → `off`, `tailSwOn` → `tail_lights`, `headLampLowSwOn` → `headlamps`, `autoLightSwOn` → `auto`. The **Trip** event's text attributes and raw trip events retain their original API values.
+
+See the [full entity mapping](entities.md#native-entity-types) for every sensor type.
+
+Only current measurements generate measurement statistics. Charge targets, cabin temperature targets, range/time estimates, capacity, coordinates, data age and delayed **(last trip)** readings no longer generate new measurement statistics. Their ordinary state history remains; existing statistics are not deleted or rewritten. Heading uses angular statistics so 359° and 1° average around north. Odometer uses `total` because lifetime mileage does not periodically reset. The separate [trip statistics](trips.md#trip-statistics) continue to record distance, driving time and speed against the hour driven.
+
+These remain read-only entities. The API does not support operating locks, windows, heating or fans, so they are not exposed as controllable switches, covers, locks, fans or climate entities.
+
+## On/off readings and upgrading to 0.7.0
+
+Ignition, ignition power, high-voltage system power, accessory power, sleep mode, climate control, windscreen defrost, steering wheel heating and freezer operation are native binary sensors. They report `on` or `off`, allowing Home Assistant to colour active dashboard icons. Missing, invalid or unexpected values do not become `off`. These readings reflect the latest cloud report; ignition can be on while the vehicle is parked.
+
+**Upgrading from 0.6.0 or earlier:** these nine readings move from `sensor.*` to `binary_sensor.*`. After updating and restarting Home Assistant, find their new entity IDs on the vehicle's device page and update dashboard cards, automations and scripts that use the old IDs. For example, `sensor.ev6_ignition` becomes `binary_sensor.ev6_ignition` with the default names. In a picture-elements `state-icon`, use the new entity and `state_color: true`.
+
+Home Assistant registers these as new entities. Custom entity IDs, names, icons, areas and disabled/hidden settings on the old sensors are not copied; reapply the settings you need. Old sensor entries may remain unavailable and can be removed after you update their references. Existing history is not moved to the new entities. The [example dashboard](../examples/dashboard.yaml) uses the new IDs.
+
+The 0.7.0 release left other text readings unchanged; 0.8.0 extends those conversions.
