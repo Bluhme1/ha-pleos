@@ -142,6 +142,16 @@ Each account entry creates an **API device** (for example *Kia API* or *Kia 2 AP
 
 **Last successful poll** advances only when the vehicle list and all endpoints requested in that poll finish without errors. Disabled endpoints, trip data reused between scheduled trip polls, and an API `no_data` result do not count as failures. Authentication, connection, rate-limit and individual endpoint errors leave the timestamp unchanged. It remains visible during failures and starts unknown after setup/reload until a poll succeeds. Check each car's **last reported** and **data age** sensors for the age of the actual vehicle readings; a successful poll can return old data.
 
+### On/off readings and upgrading to 0.7.0
+
+Ignition, ignition power, high-voltage system power, accessory power, sleep mode, climate control, windscreen defrost, steering wheel heating and freezer operation are native binary sensors. They report `on` or `off`, allowing Home Assistant to colour active dashboard icons. Missing, invalid or unexpected values do not become `off`. These readings reflect the latest cloud report; ignition can be on while the vehicle is parked.
+
+**Upgrading from 0.6.0 or earlier:** these nine readings move from `sensor.*` to `binary_sensor.*`. After updating and restarting Home Assistant, find their new entity IDs on the vehicle's device page and update dashboard cards, automations and scripts that use the old IDs. For example, `sensor.ev6_ignition` becomes `binary_sensor.ev6_ignition` with the default names. In a picture-elements `state-icon`, use the new entity and `state_color: true`.
+
+Home Assistant registers these as new entities. Custom entity IDs, names, icons, areas and disabled/hidden settings on the old sensors are not copied; reapply the settings you need. Old sensor entries may remain unavailable and can be removed after you update their references. Existing history is not moved to the new entities. The [example dashboard](examples/dashboard.yaml) uses the new IDs.
+
+Seat heating/ventilation levels, climate mode, door states and **(last trip)** text readings keep their existing sensor entities and values.
+
 ### Units
 
 Status readings use the unit returned by the API. For example, the [odometer response](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-vehicle-operation-status) can report `km`, `mile`, `meter` or `feet`; these become Home Assistant's `km`, `mi`, `m` or `ft`. Trip odometer samples are documented in kilometres.

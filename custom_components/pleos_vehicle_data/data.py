@@ -52,6 +52,14 @@ NAMES = {"batteries_charge_stateofcharge": "Battery level", "batteries_charge_ch
             for row, position in ((1, "Front"), (2, "Rear")) for side in ("left", "right")
             for field, name in (("heat", "heating"), ("ventilation", "ventilation"))}}
 
+# Only documented two-state fields: an "off" seat-heating level is still multi-state.
+ON_OFF_KEYS = (
+    "driving_ignition_status", "driving_ignition_ignitiondetails_ign1_status",
+    "driving_ignition_ignitiondetails_ign3_status", "driving_ignition_ignitiondetails_acc_status",
+    "driving_sleepmode", "status_climatecontrol_status", "status_windshield_defrost",
+    "status_steeringwheelheat", "freezer_freezer_status",
+)
+
 TRIP_NAMES = {
     "batteries.hv.voltage": "Traction battery voltage", "engine.oilTemperature": "Engine oil temperature",
     "engine.rpm": "Engine speed", "location.speed": "Speed", "location.speedUnit": "Speed unit",
@@ -288,6 +296,12 @@ def readings(endpoint, data, vehicle_type, rejections=None):
         if spec:
             opts = spec.metadata() if spec.options else opts | spec.metadata()
         domain = "sensor"
+        key = identifier(endpoint + "_" + "_".join(map(str, path)))
+        if key in ON_OFF_KEYS:
+            if value not in ("on", "off"):
+                reject(path, value, "expected on or off")
+                return
+            value = value == "on"
         if path == ("charge", "plugin"):
             if value not in ("connected", "disconnected"):
                 reject(path, value, "expected connected or disconnected")
@@ -299,7 +313,6 @@ def readings(endpoint, data, vehicle_type, rejections=None):
             if path == ("charge", "charging"):
                 opts["device_class"] = "battery_charging"
             opts.pop("state_class", None)
-        key = identifier(endpoint + "_" + "_".join(map(str, path)))
         name = NAMES.get(key, label(path))
         if endpoint == "powertrains" and path[0] == "distanceToEmpties":
             base, _, slot = key.rpartition("_")

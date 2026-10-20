@@ -5,10 +5,10 @@ Fields the API adds without documentation keep their generated English name inst
 """
 
 from .const import ENDPOINT_NAMES, ENDPOINTS, SNAPSHOT_ENDPOINTS, TRIP_ENDPOINTS
-from .data import NAMES, TRIP_FIELDS, TRIP_NAMES, identifier, label
+from .data import NAMES, ON_OFF_KEYS, TRIP_FIELDS, TRIP_NAMES, identifier, label
 
-# Documented boolean fields, which become binary sensors.
-BINARY_KEYS = ("batteries_charge_charging", "batteries_charge_plugin", "driving_transmission_parkingposition")
+# Documented boolean and on/off fields, which become binary sensors.
+BINARY_KEYS = ("batteries_charge_charging", "batteries_charge_plugin", "driving_transmission_parkingposition") + ON_OFF_KEYS
 
 
 def _sensor_names():

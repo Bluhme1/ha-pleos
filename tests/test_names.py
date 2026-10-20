@@ -90,6 +90,43 @@ class TranslationFileTests(unittest.TestCase):
 
 
 class EntityNameTests(HomeAssistantTestCase):
+    async def test_ignition_binary_entity_registers_on_upgrade_and_tracks_states(self):
+        await entity_registry.async_load(self.hass, load_empty=True)
+        registry = entity_registry.async_get(self.hass)
+        car_id = vehicle_id("kia", CAR["vin"])
+        key = "driving_ignition_status"
+        legacy = registry.async_get_or_create(
+            "sensor", DOMAIN, car_id + "_" + key, config_entry=self.entry,
+            suggested_object_id="custom_ignition",
+        )
+        payload = {"timestamp": stamp(), "ignition": {"status": "on"}}
+        self.client.vehicles = AsyncMock(return_value=[CAR | {"nickname": "Van"}])
+        self.client.get = AsyncMock(side_effect=lambda path: payload if path.endswith("/driving") else None)
+        await self.coordinator.async_refresh()
+        reading = self.coordinator.data["cars"][car_id]["readings"][key]
+        self.assertEqual(reading["domain"], "binary_sensor")
+        binary = ReadingBinarySensor(self.coordinator, car_id, key, reading)
+        self.assertEqual(binary.translation_key, key)
+        platform = EntityPlatform(hass=self.hass, logger=logging.getLogger(__name__), domain="binary_sensor",
+                                  platform_name=DOMAIN, platform=None, scan_interval=timedelta(minutes=15),
+                                  entity_namespace=None)
+        platform.config_entry = self.entry
+        try:
+            await platform.async_add_entities([binary])
+            entity_id = registry.async_get_entity_id("binary_sensor", DOMAIN, car_id + "_" + key)
+            self.assertEqual(entity_id, "binary_sensor.van_ignition")
+            self.assertEqual(self.hass.states.get(entity_id).state, "on")
+            # Domain changes create a new entity; keep the old registry entry/history for the user.
+            self.assertEqual(registry.async_get(legacy.entity_id), legacy)
+            for raw, expected in (("off", "off"), ("invalid", "unavailable"), (None, "unavailable"),
+                                  ("unexpected", "unavailable"), ("on", "on")):
+                with self.subTest(raw=raw):
+                    payload["ignition"]["status"] = raw
+                    await self.coordinator.async_refresh()
+                    self.assertEqual(self.hass.states.get(entity_id).state, expected)
+        finally:
+            await platform.async_reset()
+
     async def test_entities_use_translation_keys_and_keep_names_for_undocumented_fields(self):
         payload = {"timestamp": stamp(), "charge": {"stateOfCharge": 50, "charging": False, "newField": 3},
                    "location": {"type": 0, "latitude": 0, "longitude": 0}}

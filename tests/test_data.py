@@ -3,12 +3,49 @@
 import unittest
 
 from custom_components.pleos_vehicle_data.const import BRANDS
-from custom_components.pleos_vehicle_data.data import (TRIP_FIELDS, Spec, scale_pressure, snapshot_spec, TRIP_NAMES, location, readings, vehicle_id)
+from custom_components.pleos_vehicle_data.data import (TRIP_FIELDS, Rejections, Spec, scale_pressure, snapshot_spec, TRIP_NAMES, location, readings, vehicle_id)
 
 from support import CAR, stamp
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_documented_on_off_fields_are_binary_and_reject_other_states(self):
+        for value in ("on", "off", None, "invalid", "unknown", "unexpected", True, False, 0, 1):
+            payloads = {
+                "driving": {"ignition": {"status": value, "ignitionDetails": [
+                    {"type": kind, "status": value} for kind in ("ign1", "ign3", "acc")]}, "sleepMode": value},
+                "status": {"climateControl": {"status": value}, "windshield": {"defrost": value},
+                           "steeringWheelHeat": value},
+                "freezer": {"freezer": {"status": value}},
+            }
+            for endpoint, payload in payloads.items():
+                with self.subTest(endpoint=endpoint, value=value):
+                    rejections = Rejections(endpoint)
+                    parsed = readings(endpoint, payload, "EV", rejections)
+                    count = {"driving": 5, "status": 3, "freezer": 1}[endpoint]
+                    if value in ("on", "off"):
+                        self.assertEqual(len(parsed), count)
+                        for reading in parsed.values():
+                            self.assertEqual((reading["domain"], reading["value"]),
+                                             ("binary_sensor", value.upper()))
+                            self.assertNotIn("state_class", reading)
+                            self.assertNotIn("unit_of_measurement", reading)
+                    else:
+                        self.assertEqual(parsed, {})
+                        self.assertEqual(rejections.count, 0 if value in (None, "invalid") else count)
+                        self.assertTrue(all(example["reason"] == "expected on or off" for example in rejections.examples))
+
+    def test_multistate_and_undocumented_on_off_text_remain_sensors(self):
+        for value in ("off", "low", "middle", "high"):
+            payload = {"seats": [{"left": {"heat": value, "ventilation": value}}],
+                       "climateControl": {"mode": "off"}, "newField": "on", "doors": [{"left": "locked"}]}
+            parsed = readings("status", payload, "EV")
+            self.assertTrue(all(reading["domain"] == "sensor" for reading in parsed.values()))
+            self.assertEqual(parsed["status_seats_row1_left_heat"]["value"], value)
+            self.assertEqual(parsed["status_seats_row1_left_ventilation"]["value"], value)
+            self.assertEqual(parsed["status_newfield"]["value"], "on")
+        self.assertEqual(readings("other", {"ignition": {"status": "on"}}, "EV")["other_ignition_status"]["domain"], "sensor")
+
     def test_range_mile_aliases(self):
         for unit in ("mile", "miles"):
             with self.subTest(unit=unit):
