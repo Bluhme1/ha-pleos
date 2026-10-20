@@ -138,7 +138,8 @@ class PleosCoordinator(DataUpdateCoordinator):
             if (endpoint not in SNAPSHOT_ENDPOINTS or endpoint == "locations" or key.startswith(RANGE_PREFIX)
                     or reading["domain"] != "sensor" or not finite_number(reading["value"])
                     or (reading.get("device_class") not in ("battery", "distance", "temperature", "pressure")
-                        and key != "powertrains_engine_fuellevel")):
+                        and key != "powertrains_engine_fuellevel"
+                        and not key.startswith("batteries_charge_targetstateofcharge_"))):
                 continue
             source = car["readings"][identifier(endpoint) + "_api"]
             status = source["attributes"].get("http_status", -1)
@@ -280,8 +281,7 @@ class PleosCoordinator(DataUpdateCoordinator):
         prefix = identifier(endpoint)
         for suffix, name, reading in (
             ("reported_at", " last reported", {"value": stamp, "device_class": "timestamp"}),
-            ("data_age", " data age", {"value": round(age / 60, 1), "unit_of_measurement": "min",
-                                       "device_class": "duration", "state_class": "measurement"}),
+            ("data_age", " data age", {"value": round(age / 60, 1), "unit_of_measurement": "min"}),
         ):
             car["readings"][prefix + "_" + suffix] = reading | {
                 "name": ENDPOINT_NAMES[endpoint] + name, "domain": "sensor", "source": endpoint,

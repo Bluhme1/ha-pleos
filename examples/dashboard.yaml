@@ -403,22 +403,46 @@ views:
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_bonnet
+            entity: binary_sensor.my_car_bonnet
             name: Bonnet
             icon: mdi:car-select
             visibility:
               - condition: state
-                entity: sensor.my_car_bonnet
+                entity: binary_sensor.my_car_bonnet
                 state_not: "unknown"
 
           - type: tile
-            entity: sensor.my_car_boot
+            entity: binary_sensor.my_car_boot
             name: Boot
             icon: mdi:car-back
             visibility:
               - condition: state
-                entity: sensor.my_car_boot
+                entity: binary_sensor.my_car_boot
                 state_not: "unknown"
+
+          - type: tile
+            entity: binary_sensor.my_car_sunroof
+            name: Sunroof
+            visibility:
+              - condition: state
+                entity: binary_sensor.my_car_sunroof
+                state_not: "unknown"
+
+          - type: tile
+            entity: binary_sensor.my_car_washer_fluid_warning
+            name: Washer fluid
+            visibility:
+              - condition: state
+                entity: binary_sensor.my_car_washer_fluid_warning
+                state: "on"
+
+          - type: tile
+            entity: binary_sensor.my_car_tyre_pressure_warning
+            name: Tyre pressure
+            visibility:
+              - condition: state
+                entity: binary_sensor.my_car_tyre_pressure_warning
+                state: "on"
 
           - type: heading
             heading: Climate

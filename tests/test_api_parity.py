@@ -2,13 +2,13 @@
 
 import unittest
 
-from custom_components.pleos_vehicle_data.data import location, readings, trip_readings
+from custom_components.pleos_vehicle_data.data import WARNING_NAMES, location, readings, trip_readings
 
 
 class ApiParityTests(unittest.TestCase):
     def test_oversized_json_numbers_do_not_crash_normalization(self):
         huge = 10 ** 400
-        self.assertEqual(readings("status", {"unknownField": huge, "hood": "closed"}, "EV")["status_hood"]["value"], "closed")
+        self.assertEqual(readings("status", {"unknownField": huge, "hood": "closed"}, "EV")["status_hood"]["value"], "OFF")
         self.assertNotIn("status_unknownfield", readings("status", {"unknownField": huge}, "EV"))
         self.assertIsNone(location({"timestamp": "2026-01-01T00:00:00Z", "location": {"type": 0, "latitude": huge, "longitude": 0}}))
         actual, _ = trip_readings("powertrains/data", {"trips": [{"triggerStartTime": "2026-01-01T00:00:00Z", "tripLength": huge, "engine": {"rpm": [huge]}}]})
@@ -22,7 +22,7 @@ class ApiParityTests(unittest.TestCase):
                 "stateOfCharge": 40, "batteryCapacity": 100000,
                 "targetStateOfCharge": {"standard": 80, "quick": 90}, "remainTime": 10,
             }}, {
-                "charge_plugin": "ON", "charge_status": "v2lOperating", "charge_charging": "OFF",
+                "charge_plugin": "ON", "charge_status": "v2l_operating", "charge_charging": "OFF",
                 "charge_stateofcharge": 40, "charge_batterycapacity": 100000,
                 "charge_targetstateofcharge_standard": 80, "charge_targetstateofcharge_quick": 90,
                 "charge_remaintime": 10,
@@ -59,10 +59,10 @@ class ApiParityTests(unittest.TestCase):
                 "outsideTemperature": {"value": 15, "unit": "C"},
             }, {"doors_row1_left": "locked", "doors_row1_right": "closed",
                 "doors_row2_left": "open", "doors_row2_right": "locked",
-                "hood": "closed", "trunk": "open", "sunroof": "closed",
+                "hood": "OFF", "trunk": "ON", "sunroof": "OFF",
                 "tire_row1_left": 360, "tire_row1_right": 350, "tire_row2_left": 3.6, "tire_row2_right": 3.5,
                 "warnings": "washFluid, lowFuel", "climatecontrol_mode": "auto", "climatecontrol_status": "ON",
-                "climatecontrol_speed": -1, "climatecontrol_temperature": 70, "windshield_defrost": "OFF",
+                "climatecontrol_speed": "auto", "climatecontrol_temperature": 70, "windshield_defrost": "OFF",
                 "steeringwheelheat": "ON", "seats_row1_left_heat": "low", "seats_row1_left_ventilation": "off",
                 "seats_row1_right_heat": "off", "seats_row1_right_ventilation": "high",
                 "seats_row2_left_heat": "middle", "seats_row2_left_ventilation": "off",
@@ -76,6 +76,9 @@ class ApiParityTests(unittest.TestCase):
         }
         for endpoint, (payload, expected) in cases.items():
             with self.subTest(endpoint=endpoint):
+                if endpoint == "status":
+                    expected |= {"warning_" + code.lower(): "ON" if code in payload["warnings"] else "OFF"
+                                 for code in WARNING_NAMES}
                 actual = readings(endpoint, payload | {"timestamp": "2026-01-01T00:00:00Z"}, "HV")
                 self.assertEqual({key: value["value"] for key, value in actual.items()},
                                  {endpoint + "_" + key: value for key, value in expected.items()})
@@ -98,7 +101,7 @@ class ApiParityTests(unittest.TestCase):
                 "isla": {"optionUsm": ["assist"], "optionUsm2": ["information"]},
                 "seatbelt": {"assistance": ["unbelted"], "driver": ["belted"]},
                 "steeringWheel": {"angle": [-10], "rotationSpeed": [3]}, "transmission": {"gear": ["d"]},
-            }, {"ignition_status": "on", "odometer_value": 100, "acceleration_longitudinal": -1,
+            }, {"ignition_status": "ON", "odometer_value": 100, "acceleration_longitudinal": -1,
                 "angularvelocity_yaw": 2, "isla_optionusm": "assist", "isla_optionusm2": "information",
                 "seatbelt_assistance": "unbelted", "seatbelt_driver": "belted", "steeringwheel_angle": -10,
                 "steeringwheel_rotationspeed": 3, "transmission_gear": "d"}),
@@ -109,10 +112,10 @@ class ApiParityTests(unittest.TestCase):
                 "tire": {"pressureFrontLeft": [30], "pressureFrontRight": [31],
                          "pressureRearLeft": [32], "pressureRearRight": [33], "pressureUnit": ["bar"]},
                 "warnings": {"lowFuelLevel": ["off"]}, "outsideTemperature": {"value": [0]},
-            }, {"doors_openassistance": "close", "doors_opendriver": "open", "doors_openrearleft": "close",
-                "doors_openrearright": "open", "lamp_setting": "autoLightSwOn",
+            }, {"doors_openassistance": "OFF", "doors_opendriver": "ON", "doors_openrearleft": "OFF",
+                "doors_openrearright": "ON", "lamp_setting": "auto",
                 "tire_pressurefrontleft": 3, "tire_pressurefrontright": 3.1, "tire_pressurerearleft": 3.2,
-                "tire_pressurerearright": 3.3, "tire_pressureunit": "bar", "warnings_lowfuellevel": "off",
+                "tire_pressurerearright": 3.3, "tire_pressureunit": "bar", "warnings_lowfuellevel": "OFF",
                 "outsidetemperature_value": 0}),
         }
         for endpoint, (payload, expected) in cases.items():

@@ -18,6 +18,22 @@ UNITS = {"C": "°C", "F": "°F", "km": "km", "mile": "mi", "miles": "mi",
          "meter": "m", "feet": "ft", "psi": "psi", "kpa": "kPa", "bar": "bar",
          "kph": "km/h", "mph": "mph", "mps": "m/s"}
 
+WARNING_NAMES = {
+    "lowFuel": "Low fuel warning", "smartKeyBattery": "Key battery warning",
+    "washFluid": "Washer fluid warning", "brakeOil": "Brake fluid warning",
+    "engineOil": "Engine oil warning",
+    "tirePressureFrontLeft": "Front left tyre pressure warning",
+    "tirePressureFrontRight": "Front right tyre pressure warning",
+    "tirePressureRearLeft": "Rear left tyre pressure warning",
+    "tirePressureRearRight": "Rear right tyre pressure warning",
+    "tirePressureLow": "Tyre pressure warning", "frontHeadLamp": "Headlamp warning",
+    "frontLeftTurnSignal": "Front left turn signal warning",
+    "frontRightTurnSignal": "Front right turn signal warning",
+    "rearLeftStopLamp": "Rear left brake light warning",
+    "rearRightStopLamp": "Rear right brake light warning",
+    "rearLeftTurnSignal": "Rear left turn signal warning",
+    "rearRightTurnSignal": "Rear right turn signal warning",
+}
 
 NAMES = {"batteries_charge_stateofcharge": "Battery level", "batteries_charge_charging": "Charging",
          "batteries_charge_plugin": "Plugged in", "batteries_charge_remaintime": "Charge time remaining",
@@ -50,7 +66,8 @@ NAMES = {"batteries_charge_stateofcharge": "Battery level", "batteries_charge_ch
             for row, position in ((1, "Front"), (2, "Rear")) for side in ("left", "right")},
          **{f"status_seats_row{row}_{side}_{field}": f"{position} {side} seat {name}"
             for row, position in ((1, "Front"), (2, "Rear")) for side in ("left", "right")
-            for field, name in (("heat", "heating"), ("ventilation", "ventilation"))}}
+            for field, name in (("heat", "heating"), ("ventilation", "ventilation"))},
+         **{"status_warning_" + code.lower(): name for code, name in WARNING_NAMES.items()}}
 
 # Only documented two-state fields: an "off" seat-heating level is still multi-state.
 ON_OFF_KEYS = (
@@ -59,6 +76,27 @@ ON_OFF_KEYS = (
     "driving_sleepmode", "status_climatecontrol_status", "status_windshield_defrost",
     "status_steeringwheelheat", "freezer_freezer_status",
 )
+
+OPENING_CLASSES = {"status_hood": "opening", "status_trunk": "opening", "status_sunroof": "window"}
+BINARY_CLASSES = {
+    **OPENING_CLASSES,
+    **{key: "power" for key in ON_OFF_KEYS if key.startswith("driving_ignition")},
+    "status_climatecontrol_status": "running", "freezer_freezer_status": "running",
+}
+CHARGING_STATES = {
+    "notCharging": "not_charging", "charging": "charging", "fastCharging": "fast_charging",
+    "v2lOperating": "v2l_operating", "v2lStop": "v2l_stop", "v2xOperating": "v2x_operating",
+    "reservedCharging": "reserved_charging", "wirelessCharging": "wireless_charging",
+}
+ENUM_OPTIONS = {
+    "batteries_charge_status": tuple(CHARGING_STATES.values()),
+    "status_climatecontrol_mode": ("manual", "auto", "off", "error"),
+    "status_climatecontrol_speed": ("auto", "off", *(f"level_{level}" for level in range(1, 9))),
+    **{f"status_doors_row{row}_{side}": ("open", "closed", "locked")
+       for row in (1, 2) for side in ("left", "right")},
+    **{f"status_seats_row{row}_{side}_{field}": ("off", "low", "middle", "high")
+       for row in (1, 2) for side in ("left", "right") for field in ("heat", "ventilation")},
+}
 
 TRIP_NAMES = {
     "batteries.hv.voltage": "Traction battery voltage", "engine.oilTemperature": "Engine oil temperature",
@@ -119,7 +157,7 @@ class Spec:
     units: tuple | None = None  # Accepted raw units; None accepts any.
     unit: str | None = None  # Fixed Home Assistant unit, replacing the raw one.
     device_class: str | None = None
-    state_class: str | None = None  # Replaces the default "measurement" when set.
+    state_class: str | None = "measurement"
     integer: bool = False
     numeric_text: bool = False  # Also accept numbers sent as strings; the value becomes a float.
     convert: Callable | None = None  # convert(value, raw_unit) after validation.
@@ -176,20 +214,24 @@ PERCENT = Spec(0, 100, unit="%", device_class="battery")
 SNAPSHOT_FIELDS = (
     ("status", prefix("tire"), Spec(0, 254, units=("psi", "kpa", "bar"), convert=scale_pressure,
                                      device_class="pressure")),
-    (None, last("stateOfCharge", "remainRatio"), PERCENT),
-    (None, prefix("charge", "targetStateOfCharge"), PERCENT),
-    (None, last("fuelLevel"), Spec(0, 100, unit="%")),
-    (None, exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration")),
+    ("batteries", exact(("charge", "stateOfCharge")), PERCENT),
+    ("powertrains", lambda path: len(path) == 3 and path[0] == "batteries" and path[-1] == "remainRatio", PERCENT),
+    ("batteries", prefix("charge", "targetStateOfCharge"), Spec(0, 100, unit="%", state_class=None)),
+    ("batteries", exact(("charge", "batteryCapacity")), Spec(0, math.inf, state_class=None)),
+    ("powertrains", exact(("engine", "fuelLevel")), Spec(0, 100, unit="%")),
+    ("batteries", exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration", state_class=None)),
     ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "mile", "miles"),
-                                                      numeric_text=True, device_class="distance")),
+                                                      numeric_text=True, device_class="distance", state_class=None)),
     ("driving", exact(("odometer",)), Spec(0, 16777214, units=("km", "mile", "meter", "feet"),
-                                           device_class="distance", state_class="total_increasing")),
-    ("status", exact(("climateControl", "temperature"), ("outsideTemperature",)), Spec(-100, 100, units=("C", "F"))),
-    ("status", exact(("climateControl", "speed")), Spec(-1, 8, integer=True)),
+                                           device_class="distance", state_class="total")),
+    ("status", exact(("climateControl", "temperature")), Spec(-100, 100, units=("C", "F"), state_class=None)),
+    ("status", exact(("outsideTemperature",)), Spec(-100, 100, units=("C", "F"))),
+    ("status", exact(("climateControl", "speed")), Spec(-1, 8, integer=True,
+        convert=lambda value, unit: value + 1, options=ENUM_OPTIONS["status_climatecontrol_speed"])),
     ("freezer", exact(("freezer", "temperature")), Spec(-40, 62.3, unit="°C", device_class="temperature")),
-    ("locations", last("latitude"), Spec(-90, 90, unit="°")),
-    ("locations", last("longitude"), Spec(-180, 180, unit="°")),
-    ("locations", last("heading"), Spec(0, 359, unit="°")),
+    ("locations", last("latitude"), Spec(-90, 90, unit="°", state_class=None)),
+    ("locations", last("longitude"), Spec(-180, 180, unit="°", state_class=None)),
+    ("locations", last("heading"), Spec(0, 359, unit="°", state_class="measurement_angle")),
     ("locations", last("altitude"), Spec(-100, 10000, unit="m", device_class="distance")),
     ("locations", last("speed"), Spec(0, 1000, units=("kph", "mph", "mps"), device_class="speed")),
     ("locations", last("type"), Spec(0, 2, integer=True, options=("WGS84", "Bessel", "CoordShift"))),
@@ -233,6 +275,26 @@ def readings(endpoint, data, vehicle_type, rejections=None):
     reject = rejections.add if rejections is not None else lambda *args: None
 
     def walk(value, path=(), unit=None):
+        if endpoint == "status" and path == ("warnings",):
+            if value is None or value == "invalid":
+                return
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                reject(path, value, "warnings must all be text")
+                return
+            if any(not item.strip() or item == "invalid" for item in value):
+                reject(path, value, "warnings contain an invalid code")
+                return
+            # Only a valid list can clear warnings; missing data must never mean OK.
+            result["status_warnings"] = {
+                "name": NAMES["status_warnings"], "value": ", ".join(value)[:255] or "None", "domain": "sensor",
+                "attributes": {"warnings": list(value), "warning_count": len(value)},
+            }
+            for code, name in WARNING_NAMES.items():
+                result["status_warning_" + code.lower()] = {
+                    "name": name, "domain": "binary_sensor", "device_class": "problem",
+                    "value": "ON" if code in value else "OFF",
+                }
+            return
         if isinstance(value, dict):
             local_unit = value.get("unit", unit)
             if local_unit is not None and local_unit != "invalid" and not isinstance(local_unit, str):
@@ -288,7 +350,8 @@ def readings(endpoint, data, vehicle_type, rejections=None):
             return
         opts = {}
         if numeric:
-            opts["state_class"] = "measurement"
+            if spec is None or spec.state_class is not None:
+                opts["state_class"] = spec.state_class if spec else "measurement"
             if unit in UNITS:
                 opts["unit_of_measurement"] = UNITS[unit]
                 if unit in ("C", "F"):
@@ -297,12 +360,32 @@ def readings(endpoint, data, vehicle_type, rejections=None):
             opts = spec.metadata() if spec.options else opts | spec.metadata()
         domain = "sensor"
         key = identifier(endpoint + "_" + "_".join(map(str, path)))
+        if key in ENUM_OPTIONS:
+            raw = value
+            if key == "batteries_charge_status":
+                value = CHARGING_STATES.get(value)
+            if value not in ENUM_OPTIONS[key]:
+                reject(path, raw, "unexpected enum state")
+                return
+            opts = {"device_class": "enum", "options": list(ENUM_OPTIONS[key])}
+        if key in OPENING_CLASSES:
+            if value not in ("open", "closed"):
+                reject(path, value, "expected open or closed")
+                return
+            value = value == "open"
         if key in ON_OFF_KEYS:
             if value not in ("on", "off"):
                 reject(path, value, "expected on or off")
                 return
             value = value == "on"
-        if path == ("charge", "plugin"):
+        if key in BINARY_CLASSES:
+            opts["device_class"] = BINARY_CLASSES[key]
+        if key == "locations_location_type":
+            opts["entity_category"] = "diagnostic"
+        if key in ("batteries_charge_charging", "driving_transmission_parkingposition") and not isinstance(value, bool):
+            reject(path, value, "expected boolean")
+            return
+        if key == "batteries_charge_plugin":
             if value not in ("connected", "disconnected"):
                 reject(path, value, "expected connected or disconnected")
                 return
@@ -310,7 +393,7 @@ def readings(endpoint, data, vehicle_type, rejections=None):
             opts["device_class"] = "plug"
         if isinstance(value, bool):
             domain, value = "binary_sensor", "ON" if value else "OFF"
-            if path == ("charge", "charging"):
+            if key == "batteries_charge_charging":
                 opts["device_class"] = "battery_charging"
             opts.pop("state_class", None)
         name = NAMES.get(key, label(path))
@@ -379,6 +462,27 @@ TRIP_FIELDS = {
     },
 }
 
+# Historical two-state samples still describe the last trip, never the current car.
+TRIP_BINARY = {
+    "driving_data_ignition_status": ("on", "off", "power"),
+    **{f"status_data_doors_open{side}": ("open", "close", "door")
+       for side in ("assistance", "driver", "rearleft", "rearright")},
+    "status_data_warnings_lowfuellevel": ("on", "off", "problem"),
+}
+LAMP_STATES = {
+    "lightSwOff": "off", "tailSwOn": "tail_lights",
+    "headLampLowSwOn": "headlamps", "autoLightSwOn": "auto",
+}
+TRIP_ENUM_OPTIONS = {
+    "driving_data_isla_optionusm": ("none", "off", "warning", "assist"),
+    "driving_data_isla_optionusm2": ("none", "off", "information", "warning", "assist"),
+    **{f"driving_data_seatbelt_{seat}": ("belted", "unbelted") for seat in ("assistance", "driver")},
+    "driving_data_transmission_gear": ("p", "r", "n", "d"),
+    "status_data_lamp_setting": tuple(LAMP_STATES.values()),
+    "speed_location_speedunit": ("kph", "mph"),
+    "status_data_tire_pressureunit": ("psi", "kpa", "bar"),
+}
+
 
 def new_trips(data, seen):
     """Return valid trips whose start time is not in `seen`, oldest first."""
@@ -437,8 +541,8 @@ def trip_summary(endpoint, trip):
         if name == "trip_distance":
             summary["distance_km"] = reading["value"]
             continue
-        summary[name] = reading["value"]
         attributes = reading.get("attributes", {})
+        summary[name] = attributes.get("raw_value", reading["value"])
         for statistic in ("min", "max", "mean"):
             if f"trip_{statistic}" in attributes:
                 summary[f"{name}_{statistic}"] = attributes[f"trip_{statistic}"]
@@ -491,6 +595,7 @@ def trip_readings(endpoint, data, rejections=None):
         if not values or values[-1] is None or values[-1] == "invalid":
             continue
         value, index = values[-1], len(values) - 1
+        key = prefix + "_" + identifier(field)
         reading = {"name": TRIP_NAMES[field] + " (last trip)", "value": value,
                    "domain": "sensor", "historical": True,
                    "attributes": {"trip_start": start, "trip_length_ms": length, "sample_index": index}}
@@ -498,6 +603,23 @@ def trip_readings(endpoint, data, rejections=None):
             if not isinstance(value, str) or len(value) > 255:
                 reject(field, value if isinstance(value, (int, float, bool)) else repr(value)[:100], "expected text up to 255 characters")
                 continue
+            if key in TRIP_BINARY:
+                on, off, device_class = TRIP_BINARY[key]
+                if value not in (on, off):
+                    reject(field, value, f"expected {on} or {off}")
+                    continue
+                reading.update(domain="binary_sensor", device_class=device_class, value="ON" if value == on else "OFF")
+                reading["attributes"]["raw_value"] = value
+            elif key in TRIP_ENUM_OPTIONS:
+                normalized = LAMP_STATES.get(value) if key == "status_data_lamp_setting" else value
+                if normalized not in TRIP_ENUM_OPTIONS[key]:
+                    reject(field, value, "unexpected enum state")
+                    continue
+                reading.update(value=normalized, device_class="enum", options=list(TRIP_ENUM_OPTIONS[key]))
+                if normalized != value:
+                    reading["attributes"]["raw_value"] = value
+                if field in ("location.speedUnit", "tire.pressureUnit"):
+                    reading["entity_category"] = "diagnostic"
         else:
             last = numeric_sample(field, spec, index)
             if last is None:
@@ -511,12 +633,12 @@ def trip_readings(endpoint, data, rejections=None):
                 trip_min=min(valid), trip_max=max(valid), trip_mean=round(sum(valid) / len(valid), 3),
                 valid_samples=len(valid), total_samples=len(values),
             )
-            reading["state_class"] = "measurement"
+            # Delayed final samples are not current measurements; trip statistics use the actual trip hour.
             if unit:
                 reading["unit_of_measurement"] = unit
             if spec.device_class:
                 reading["device_class"] = spec.device_class
-        result[prefix + "_" + identifier(field)] = reading
+        result[key] = reading
 
     # Fields Pleos returns without documentation: the last sample as a plain reading.
     for field, value in trip_leaves(trip):
@@ -538,7 +660,7 @@ def trip_readings(endpoint, data, rejections=None):
             if not finite_number(last):
                 reject(field, repr(last), "not a finite number")
                 continue
-            reading.update(value=last, state_class="measurement")
+            reading["value"] = last
             if values is not None:
                 attributes |= summary([sample for sample in values if finite_number(sample)])
         elif isinstance(last, str) and len(last) <= 255:
@@ -556,7 +678,7 @@ def trip_readings(endpoint, data, rejections=None):
         if len(mileage) >= 2 and mileage[-1] >= mileage[0]:
             result[prefix + "_trip_distance"] = {
                 "name": "Trip distance (last trip)", "value": round(mileage[-1] - mileage[0], 1),
-                "unit_of_measurement": "km", "device_class": "distance", "state_class": "measurement",
+                "unit_of_measurement": "km", "device_class": "distance",
                 "domain": "sensor", "historical": True,
                 "attributes": {"trip_start": start, "trip_length_ms": length,
                                "odometer_start": mileage[0], "odometer_end": mileage[-1]},

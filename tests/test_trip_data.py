@@ -57,7 +57,7 @@ class TripAggregateTests(unittest.TestCase):
         self.assertEqual(kpa["status_data_tire_pressurerearleft"]["attributes"]["trip_max"], 360)
 
     def test_text_fields_have_no_aggregates(self):
-        data = self.trip(transmission={"gear": ["P", "D"]})
+        data = self.trip(transmission={"gear": ["p", "d"]})
         self.assertNotIn("trip_min", trip_readings("driving/data", data)[0]["driving_data_transmission_gear"]["attributes"])
 
     def test_trip_distance_from_first_and_last_valid_odometer_samples(self):
@@ -97,8 +97,9 @@ class UnknownTripFieldTests(unittest.TestCase):
                 "engine": {"rpm": [800], "torque": [10.5, 12.5]}}
         result, _ = trip_readings("powertrains/data", {"trips": [trip]})
         temperature = result["powertrains_data_battery_celltemperaturemax"]
-        self.assertEqual((temperature["value"], temperature["name"], temperature["state_class"]),
-                         (23, "Battery cell temperature max (last trip)", "measurement"))
+        self.assertEqual((temperature["value"], temperature["name"]),
+                         (23, "Battery cell temperature max (last trip)"))
+        self.assertNotIn("state_class", temperature)
         self.assertEqual({key: temperature["attributes"][key] for key in
                           ("trip_min", "trip_max", "trip_mean", "valid_samples", "total_samples", "sample_index")},
                          {"trip_min": 20, "trip_max": 25, "trip_mean": 22.667, "valid_samples": 3,

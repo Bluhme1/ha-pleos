@@ -1,0 +1,56 @@
+{
+  "entity": {
+    "sensor": {
+      "batteries_charge_targetstateofcharge_standard": {
+        "default": "mdi:target"
+      },
+      "batteries_charge_targetstateofcharge_quick": {
+        "default": "mdi:target"
+      },
+      "powertrains_engine_fuellevel": {
+        "default": "mdi:gas-station"
+      },
+      "status_climatecontrol_speed": {
+        "default": "mdi:fan"
+      },
+      "driving_data_transmission_gear": {
+        "default": "mdi:car-shift-pattern"
+      },
+      "driving_data_seatbelt_assistance": {
+        "default": "mdi:seatbelt"
+      },
+      "driving_data_seatbelt_driver": {
+        "default": "mdi:seatbelt"
+      },
+      "status_data_lamp_setting": {
+        "default": "mdi:car-light-high"
+      },
+      "driving_data_isla_optionusm": {
+        "default": "mdi:speedometer"
+      },
+      "driving_data_isla_optionusm2": {
+        "default": "mdi:speedometer"
+      },
+      "powertrains_data_engine_rpm": {
+        "default": "mdi:engine"
+      },
+      "locations_location_heading": {
+        "default": "mdi:compass"
+      }
+    },
+    "binary_sensor": {
+      "driving_sleepmode": {
+        "default": "mdi:sleep"
+      },
+      "driving_transmission_parkingposition": {
+        "default": "mdi:car-brake-parking"
+      },
+      "status_windshield_defrost": {
+        "default": "mdi:car-defrost-front"
+      },
+      "status_steeringwheelheat": {
+        "default": "mdi:steering"
+      }
+    }
+  }
+}

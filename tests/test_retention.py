@@ -17,7 +17,8 @@ class RetentionTests(HomeAssistantTestCase):
     async def seed(self):
         reported = stamp(30)
         payloads = {
-            'batteries': {'charge': {'stateOfCharge': 60, 'charging': True, 'remainTime': 40}},
+            'batteries': {'charge': {'stateOfCharge': 60, 'charging': True, 'remainTime': 40,
+                                     'targetStateOfCharge': {'standard': 80, 'quick': 100}}},
             'powertrains': {'engine': {'fuelLevel': 0}},
             'driving': {'odometer': {'value': 1500, 'unit': 'mile'}, 'ignition': {'status': 'on'}},
             'status': {'outsideTemperature': {'value': 15, 'unit': 'C'},
@@ -47,7 +48,9 @@ class RetentionTests(HomeAssistantTestCase):
         previous = self.coordinator.data
         original = deepcopy(previous)
         successful_poll = self.coordinator.last_successful_poll
-        kept = {'batteries_charge_stateofcharge': 60, 'powertrains_engine_fuellevel': 0,
+        kept = {'batteries_charge_stateofcharge': 60,
+                'batteries_charge_targetstateofcharge_standard': 80, 'batteries_charge_targetstateofcharge_quick': 100,
+                'powertrains_engine_fuellevel': 0,
                 'driving_odometer': 1500, 'status_outsidetemperature': 15,
                 'status_tire_row1_left': 36, 'freezer_freezer_temperature': -20}
         for status in (0, 503, 429):
@@ -64,7 +67,8 @@ class RetentionTests(HomeAssistantTestCase):
                 self.assertEqual(self.sensors['driving_odometer'].native_unit_of_measurement, 'km')
                 self.assertEqual(self.sensors['driving_odometer'].extra_state_attributes['api_unit_of_measurement'], 'mi')
                 for key in ('batteries_charge_charging', 'batteries_charge_remaintime', 'status_warnings',
-                            'status_doors_row1_left', 'driving_ignition_status', 'locations_location_altitude',
+                            'status_warning_lowfuel', 'status_doors_row1_left', 'driving_ignition_status',
+                            'locations_location_altitude',
                             'freezer_freezer_status', 'batteries_reported_at', 'batteries_data_age'):
                     self.assertNotIn(key, car['readings'])
                 self.assertIsNone(car['location'])

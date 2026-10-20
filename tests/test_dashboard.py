@@ -65,8 +65,11 @@ class DashboardTests(HomeAssistantTestCase):
         for card in CARDS + BADGES:
             if card["type"] in ("tile", "gauge", "entity"):
                 with self.subTest(entity=card["entity"]):
-                    self.assertIn({"condition": "state", "entity": card["entity"], "state_not": "unknown"},
-                                  card.get("visibility", []))
+                    self.assertTrue(any(
+                        condition.get("condition") == "state" and condition.get("entity") == card["entity"]
+                        and (condition.get("state_not") == "unknown"
+                             or condition.get("state") not in (None, "unknown", "unavailable"))
+                        for condition in card.get("visibility", [])))
 
     async def test_archive_badges_appear_only_with_the_archive(self):
         archive = [badge for badge in BADGES if badge.get("entity") == "sensor.hyundai_api_archive"]

@@ -60,7 +60,7 @@ class RangeCache:
                 if key not in current:
                     car["readings"][key] = {
                         "value": reading["value"], "unit_of_measurement": reading["unit"], "name": reading["name"],
-                        "domain": "sensor", "device_class": "distance", "state_class": "measurement", "source": "powertrains",
+                        "domain": "sensor", "device_class": "distance", "source": "powertrains",
                         "attributes": {"reported_at": reading["reported_at"], "last_known": True, "data_stale": True},
                     }
             if saved:
