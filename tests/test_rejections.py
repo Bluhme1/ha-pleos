@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from homeassistant.helpers.json import json_dumps
 
-from custom_components.pleos_vehicle_data.data import REJECTION_EXAMPLES, Rejections, readings, trip_readings, vehicle_id
+from custom_components.pleos_vehicle_data.data import REJECTION_EXAMPLES, Rejections, readings, trip_readings, trip_summary, vehicle_id
 
 from support import CAR, HomeAssistantTestCase, stamp
 
@@ -67,6 +67,20 @@ class SnapshotRejectionTests(unittest.TestCase):
 
 
 class TripRejectionTests(unittest.TestCase):
+    def test_missing_final_samples_are_not_rejections_or_previous_values(self):
+        for missing in (None, "invalid", "null"):
+            with self.subTest(missing=missing):
+                trip = {"triggerStartTime": stamp(30),
+                        "isla": {"optionUsm": ["warning", missing], "optionUsm2": ["none", missing]},
+                        "ignition": {"status": ["on", missing]}, "odometer": {"value": [100, missing]},
+                        "undocumented": ["example", missing], "scalar": missing}
+                rejections = Rejections("driving/data")
+                parsed, _ = trip_readings("driving/data", {"trips": [trip]}, rejections)
+                self.assertEqual(rejections.count, 0)
+                self.assertEqual(set(parsed), {"driving_data_trip_start"})
+                self.assertEqual(trip_summary("driving/data", trip), {"trip_start": trip["triggerStartTime"]})
+                self.assertEqual(trip["isla"]["optionUsm"], ["warning", missing])
+
     def test_unusable_last_samples_are_rejections(self):
         trip = {"triggerStartTime": stamp(30), "engine": {"rpm": [800, 99999]},
                 "location": {"speed": [10], "speedUnit": ["furlongs"]}}
@@ -79,6 +93,21 @@ class TripRejectionTests(unittest.TestCase):
 
 
 class DiagnosticSensorTests(HomeAssistantTestCase):
+    async def test_literal_null_trip_samples_preserve_raw_diagnostics(self):
+        payload = {"trips": [{"triggerStartTime": stamp(30), "tripLength": 1000,
+                              "isla": {"optionUsm": ["warning", "null"], "optionUsm2": ["none", "null"]}}]}
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: payload if "/driving/data?" in path else None)
+        result = await self.coordinator._async_update_data()
+        parsed = result["cars"][vehicle_id("kia", CAR["vin"])]["readings"]
+        diagnostic = parsed["driving_data_api"]
+        self.assertEqual(diagnostic["value"], "available")
+        self.assertEqual(diagnostic["attributes"]["rejected_values"], 0)
+        self.assertEqual(diagnostic["attributes"]["data"], payload)
+        self.assertNotIn("driving_data_isla_optionusm", parsed)
+        self.assertNotIn("driving_data_isla_optionusm2", parsed)
+        self.assertEqual(parsed["driving_data_trip_duration"]["value"], 1)
+
     async def test_endpoint_diagnostic_sensor_shows_rejections(self):
         self.client.vehicles = AsyncMock(return_value=[CAR])
         self.client.get = AsyncMock(side_effect=lambda path: {"timestamp": stamp(), "charge": {"stateOfCharge": 150}}

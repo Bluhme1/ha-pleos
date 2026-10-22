@@ -593,7 +593,8 @@ def trip_readings(endpoint, data, rejections=None):
 
     for field, spec in TRIP_FIELDS[endpoint].items():
         values = samples(field)
-        if not values or values[-1] is None or values[-1] == "invalid":
+        # Some vehicles send the literal text "null" for a missing final sample.
+        if not values or values[-1] in (None, "invalid", "null"):
             continue
         value, index = values[-1], len(values) - 1
         key = prefix + "_" + identifier(field)
@@ -648,7 +649,7 @@ def trip_readings(endpoint, data, rejections=None):
             continue
         values = value if isinstance(value, list) else None
         last = values[-1] if values else value
-        if last is None or last == "invalid" or values == []:
+        if last in (None, "invalid", "null") or values == []:
             continue
         name = label(tuple(field.split("."))) + " (last trip)"
         attributes = {"trip_start": start, "trip_length_ms": length}
