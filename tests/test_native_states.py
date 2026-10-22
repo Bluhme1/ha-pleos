@@ -5,13 +5,14 @@ import logging
 import unittest
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import EntityPlatform
 from pleos_client import ApiError
 
 from custom_components.pleos_vehicle_data.binary_sensor import ReadingBinarySensor
+from custom_components.pleos_vehicle_data.binary_sensor import async_setup_entry as setup_binary_sensors
 from custom_components.pleos_vehicle_data.const import DOMAIN
 from custom_components.pleos_vehicle_data.data import ENUM_OPTIONS, TRIP_ENUM_OPTIONS, readings, trip_readings, trip_summary, vehicle_id
 from custom_components.pleos_vehicle_data.sensor import ReadingSensor
@@ -155,13 +156,14 @@ class NativeParsingTests(unittest.TestCase):
                  "frontLeftTurnSignal", "frontRightTurnSignal", "rearLeftStopLamp",
                  "rearRightStopLamp", "rearLeftTurnSignal", "rearRightTurnSignal")
         for active in (*codes, "futureWarning"):
-            parsed = readings("status", {"warnings": [active]}, "EV")
+            parsed = readings("status", {"warnings": [active]}, "HV")
             self.assertEqual(len(parsed), 18)
             self.assertEqual(parsed["status_warnings"]["attributes"]["warnings"], [active])
             for code in codes:
                 reading = parsed["status_warning_" + code.lower()]
                 self.assertEqual((reading["domain"], reading["device_class"], reading["value"]),
-                                 ("binary_sensor", "problem", "ON" if code == active else "OFF"))
+                                 ("binary_sensor", "battery" if code == "smartKeyBattery" else "problem",
+                                  "ON" if code == active else "OFF"))
         cleared = readings("status", {"warnings": []}, "EV")
         self.assertTrue(all(r["value"] == "OFF" for key, r in cleared.items() if key != "status_warnings"))
         for value in (None, "invalid", "", "lowFuel", False, {}, {"lowFuel": True},
@@ -169,6 +171,18 @@ class NativeParsingTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(readings("status", {"warnings": value}, "EV"), {})
         self.assertEqual(readings("status", {}, "EV"), {})
+
+    def test_only_pure_evs_omit_combustion_warning_entities(self):
+        payload = {"warnings": ["lowFuel", "engineOil", "brakeOil", "smartKeyBattery", "futureWarning"]}
+        for kind in ("EV", "HV", "PH", "PE", "DE", "FV", None, "UNKNOWN"):
+            with self.subTest(kind=kind):
+                parsed = readings("status", payload, kind)
+                for key in ("status_warning_lowfuel", "status_warning_engineoil"):
+                    self.assertEqual(key in parsed, kind != "EV")
+                self.assertEqual(parsed["status_warning_brakeoil"]["value"], "ON")
+                self.assertEqual(parsed["status_warning_smartkeybattery"]["device_class"], "battery")
+                self.assertEqual(parsed["status_warnings"]["attributes"],
+                                 {"warnings": payload["warnings"], "warning_count": 5})
 
     def test_charge_targets_are_percentages_not_battery_levels(self):
         parsed = readings("batteries", {"charge": {"stateOfCharge": 42,
@@ -194,6 +208,78 @@ class NativeParsingTests(unittest.TestCase):
 
 
 class NativeEntityTests(HomeAssistantTestCase):
+    async def test_ev_warning_upgrade_preserves_entries_and_user_disabled_state(self):
+        await entity_registry.async_load(self.hass, load_empty=True)
+        registry = entity_registry.async_get(self.hass)
+        ev_id = vehicle_id("kia", CAR["vin"])
+        hybrid = CAR | {"vin": "SYNTHETIC-HYBRID", "type": "HV"}
+        hybrid_id = vehicle_id("kia", hybrid["vin"])
+        old = []
+        for car_id in (ev_id, hybrid_id):
+            for key in ("lowfuel", "engineoil"):
+                item = registry.async_get_or_create(
+                    "binary_sensor", DOMAIN, car_id + "_status_warning_" + key, config_entry=self.entry)
+                old.append(registry.async_update_entity(item.entity_id, name="Custom warning", labels={"my-label"}))
+        registry.async_update_entity(old[1].entity_id, disabled_by=entity_registry.RegistryEntryDisabler.USER)
+        self.client.vehicles = AsyncMock(return_value=[CAR, hybrid])
+        self.client.get = AsyncMock(side_effect=lambda path: {"timestamp": stamp(), "warnings": []}
+                                    if path.endswith("/status") else None)
+        await self.coordinator.async_refresh()
+        self.entry.runtime_data = self.coordinator
+        added = MagicMock()
+        await setup_binary_sensors(self.hass, self.entry, added)
+        for item, expected in zip(old, (entity_registry.RegistryEntryDisabler.INTEGRATION,
+                                       entity_registry.RegistryEntryDisabler.USER, None, None)):
+            current = registry.async_get(item.entity_id)
+            self.assertEqual(current.disabled_by, expected)
+            self.assertEqual((current.name, current.labels), ("Custom warning", {"my-label"}))
+        created = [entity for call in added.call_args_list for entity in call.args[0]]
+        self.assertFalse(any(entity.car_id == ev_id and entity.key in
+                             ("status_warning_lowfuel", "status_warning_engineoil") for entity in created))
+        self.assertTrue(any(entity.car_id == hybrid_id and entity.key == "status_warning_lowfuel" for entity in created))
+
+    async def test_alternate_battery_category_tracks_primary_availability_without_changing_ids(self):
+        await entity_registry.async_load(self.hass, load_empty=True)
+        registry = entity_registry.async_get(self.hass)
+        car_id = vehicle_id("kia", CAR["vin"])
+        key = "powertrains_batteries_main_remainratio"
+        old = registry.async_get_or_create("sensor", DOMAIN, car_id + "_" + key, config_entry=self.entry,
+                                          suggested_object_id="custom_traction_battery")
+        registry.async_update_entity(old.entity_id, name="My traction battery")
+        payloads = {"powertrains": {"timestamp": stamp(), "batteries": [{"type": "main", "remainRatio": 42}]}}
+        self.client.vehicles = AsyncMock(return_value=[CAR])
+        self.client.get = AsyncMock(side_effect=lambda path: payloads.get(path.rsplit("/", 1)[-1]))
+        await self.coordinator.async_refresh()
+        spec = self.coordinator.data["cars"][car_id]["readings"][key]
+        sensor = ReadingSensor(self.coordinator, car_id, key, spec)
+        platform = EntityPlatform(hass=self.hass, logger=logging.getLogger(__name__), domain="sensor",
+                                  platform_name=DOMAIN, platform=None, scan_interval=timedelta(minutes=15),
+                                  entity_namespace=None)
+        platform.config_entry = self.entry
+        try:
+            await platform.async_add_entities([sensor])
+            self.assertIsNone(registry.async_get(old.entity_id).entity_category)
+            for value, timestamp, category in ((42, stamp(), "diagnostic"), (0, stamp(), "diagnostic"),
+                                               (None, stamp(), None), (101, stamp(), None),
+                                               (42, None, None), (42, stamp(), "diagnostic")):
+                with self.subTest(value=value, timestamp=timestamp):
+                    payloads["batteries"] = {"timestamp": timestamp, "charge": {"stateOfCharge": value}}
+                    await self.coordinator.async_refresh()
+                    await self.hass.async_block_till_done()
+                    self.assertEqual(sensor.entity_id, old.entity_id)
+                    self.assertEqual(registry.async_get(old.entity_id).entity_category, category)
+                    self.assertEqual(registry.async_get(old.entity_id).name, "My traction battery")
+                    self.assertEqual(self.hass.states.get(old.entity_id).state, "42")
+            # Moving a measurement into Diagnostics must not bypass its timestamp validation.
+            spec = self.coordinator.data["cars"][car_id]["readings"][key]
+            reloaded = ReadingSensor(self.coordinator, car_id, key, spec)
+            payloads["powertrains"]["timestamp"] = None
+            await self.coordinator.async_refresh()
+            self.assertFalse(reloaded.available)
+            self.assertFalse(sensor.available)
+        finally:
+            await platform.async_reset()
+
     async def test_every_documented_sensor_registers_with_home_assistant(self):
         await entity_registry.async_load(self.hass, load_empty=True)
         payloads = {endpoint: payload | {"timestamp": stamp()} for endpoint, payload in SNAPSHOTS.items()}
@@ -235,6 +321,9 @@ class NativeEntityTests(HomeAssistantTestCase):
         old_limit = registry.async_get_or_create(
             "sensor", DOMAIN, car_id + "_batteries_charge_targetstateofcharge_quick", config_entry=self.entry,
             suggested_object_id="custom_dc_limit", original_device_class="battery")
+        old_key_battery = registry.async_get_or_create(
+            "binary_sensor", DOMAIN, car_id + "_status_warning_smartkeybattery", config_entry=self.entry,
+            suggested_object_id="custom_key_battery", original_device_class="problem")
         payloads = {
             "status": {"timestamp": stamp(), "hood": "open", "warnings": ["washFluid"]},
             "batteries": {"timestamp": stamp(), "charge": {"status": "fastCharging", "stateOfCharge": 42,
@@ -255,7 +344,7 @@ class NativeEntityTests(HomeAssistantTestCase):
                     factory(self.coordinator, car_id, key, spec)
                     for key, spec in self.coordinator.data["cars"][car_id]["readings"].items()
                     if spec["domain"] == domain and key in (
-                        "status_hood", "status_warning_washfluid", "batteries_charge_status",
+                        "status_hood", "status_warning_washfluid", "status_warning_smartkeybattery", "batteries_charge_status",
                         "batteries_charge_stateofcharge", "batteries_charge_targetstateofcharge_standard",
                         "batteries_charge_targetstateofcharge_quick")])
             self.assertEqual(registry.async_get(old_bonnet.entity_id), old_bonnet)
@@ -270,6 +359,9 @@ class NativeEntityTests(HomeAssistantTestCase):
             self.assertEqual([(s.entity_id, s.state) for s in batteries], [("sensor.van_battery_level", "42")])
             warning_id = "binary_sensor.van_washer_fluid_warning"
             self.assertEqual(self.hass.states.get(warning_id).attributes["device_class"], "problem")
+            self.assertEqual(self.hass.states.get(old_key_battery.entity_id).attributes["device_class"], "battery")
+            self.assertEqual(self.hass.states.get(old_key_battery.entity_id).state, "off")
+            self.assertEqual(registry.async_get(old_key_battery.entity_id).original_device_class, "battery")
             for warnings, expected in (([], "off"), (None, "unavailable"), (["invalid"], "unavailable"),
                                        (["washFluid"], "on")):
                 payloads["status"]["warnings"] = warnings

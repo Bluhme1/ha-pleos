@@ -75,7 +75,8 @@ class VehicleEntity(CoordinatorEntity):
         else:
             present = self.reading is not None
         age = reported_age(self.reported_at)
-        if self.spec.get("entity_category") == "diagnostic" or self.spec.get("historical"):
+        if (self.spec.get("entity_category") == "diagnostic" and self.spec.get("device_class") != "battery"
+                or self.spec.get("historical")):
             return present
         # Parked cars can return the same valid snapshot for days.
         return present and age is not None

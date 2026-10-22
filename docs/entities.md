@@ -33,7 +33,8 @@ Each account entry creates an **API device** (for example *Kia API* or *Kia 2 AP
 | Climate/freezer operation | `running` binary sensors |
 | Sleep mode, in park, defrost, steering-wheel heating | On/off binary sensors with matching icons |
 | Doors, seat levels, climate mode, fan level, charging status | Enum sensors preserving the documented states |
-| Individual warnings | `problem` binary sensors; full warning list retained separately |
+| Key battery warning | `battery` binary sensor: Low / Normal |
+| Other individual warnings | `problem` binary sensors; fuel and engine-oil warning entities omitted for pure EVs |
 | Ambient, freezer and oil temperatures; cabin target temperature | `temperature` sensors; the cabin target is a setting, not a measurement |
 | Tyre pressures; battery voltage | `pressure` and `voltage` sensors with validated units |
 | Odometer | `distance` sensor with `total` state class for lifetime mileage |
@@ -52,6 +53,10 @@ Each account entry creates an **API device** (for example *Kia API* or *Kia 2 AP
 | Undocumented fields | Plain readings until their meaning and units are documented |
 
 These remain read-only entities. The API does not support operating locks, windows, heating or fans, so they are not exposed as controllable switches, covers, locks, fans or climate entities.
+
+**Battery level** is the primary charge percentage. When it has a valid reported timestamp, the separate **Traction battery level** reading from the powertrain endpoint appears under **Diagnostics**. If Battery level is missing or invalid, Traction battery level returns to the main sensor section. Both keep their own values, source timestamps, entity IDs and history; neither is a 12 V battery reading. Retained readings still follow the freshness rules below.
+
+Pure EVs do not get **Low fuel warning** or **Engine oil warning** entities. Hybrid, combustion and unknown vehicle types keep them; **Brake fluid warning** remains relevant to EVs. The **Warnings** sensor and raw API diagnostics always preserve the complete reported warning list, including unexpected codes. **Key battery warning** displays Low when reported and Normal when absent from a valid list; missing or invalid warning data remains unavailable.
 
 ## Estimated EV consumption
 

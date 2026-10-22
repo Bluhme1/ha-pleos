@@ -132,6 +132,11 @@ class PleosCoordinator(DataUpdateCoordinator):
             else:
                 self._apply_snapshot(car_id, car, endpoint, data, source)
         self._retain_measurements(car_id, car)
+        if alternate := car["readings"].get("powertrains_batteries_main_remainratio"):
+            alternate.pop("entity_category", None)
+            primary = car["readings"].get("batteries_charge_stateofcharge")
+            if primary and reported_age(primary.get("attributes", {}).get("reported_at", car["sources"].get("batteries"))) is not None:
+                alternate["entity_category"] = "diagnostic"
         return car
 
     def _retain_measurements(self, car_id, car):

@@ -224,6 +224,17 @@ views:
               - condition: state
                 entity: sensor.my_car_traction_battery_level
                 state_not: "unknown"
+              - condition: state
+                entity: sensor.my_car_traction_battery_level
+                state_not: "unavailable"
+              - condition: or
+                conditions:
+                  - condition: state
+                    entity: sensor.my_car_battery_level
+                    state: "unknown"
+                  - condition: state
+                    entity: sensor.my_car_battery_level
+                    state: "unavailable"
 
 
       # ─────────────── Vehicle
