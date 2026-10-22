@@ -291,8 +291,11 @@ def readings(endpoint, data, vehicle_type, rejections=None):
                 "attributes": {"warnings": list(value), "warning_count": len(value)},
             }
             for code, name in WARNING_NAMES.items():
+                if vehicle_type == "EV" and code in ("lowFuel", "engineOil"):
+                    continue
                 result["status_warning_" + code.lower()] = {
-                    "name": name, "domain": "binary_sensor", "device_class": "problem",
+                    "name": name, "domain": "binary_sensor",
+                    "device_class": "battery" if code == "smartKeyBattery" else "problem",
                     "value": "ON" if code in value else "OFF",
                 }
             return

@@ -4,6 +4,14 @@
 
 Read the notes for each version you are crossing, including the native entity sections when upgrading from 0.6.0 or earlier. Restart Home Assistant after updating.
 
+## Vehicle entity refinements in 0.9.2
+
+**Key battery warning** now displays Low / Normal using Home Assistant's battery binary-sensor class. Its entity ID and raw `on` / `off` states stay the same.
+
+On pure EVs, obsolete **Low fuel warning** and **Engine oil warning** entities are disabled by the integration when it loads. Their registry entries, customisations and recorded history are preserved; entries already disabled by the user remain so. They are no longer created for new EVs. Other vehicle types and the complete **Warnings** list are unchanged.
+
+When **Battery level** is available, **Traction battery level** moves into Diagnostics to avoid two primary charge readings. It returns to the main sensor section if Battery level is missing or invalid. Both entity IDs, values and history remain unchanged, so existing dashboards and automations continue to work. Restart Home Assistant after updating.
+
 ## EV economy and upgrading to 0.9.0
 
 **Battery capacity** keeps its entity ID but now displays **kWh** with the `energy_storage` device class. Its previous unitless number was the API's kJ value: `256320` becomes `71.2 kWh`. Remove any existing template division by 3600 to avoid converting twice, and update numeric thresholds that used the raw number. Raw API diagnostics and archives remain unchanged. Existing recorded history/statistics are not rewritten; older unitless values should not be compared directly with the new kWh values. Capacity remains without a state class, so this change does not create consumption totals.

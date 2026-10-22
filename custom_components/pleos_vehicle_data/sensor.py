@@ -5,7 +5,9 @@ import time
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
+from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -37,6 +39,20 @@ class ReadingSensor(VehicleEntity, SensorEntity):
                 "mi/kWh" if coordinator.hass.config.units.length_unit == "mi" else "kWh/100km"
             )
             self._attr_suggested_display_precision = 2
+
+    @property
+    def entity_category(self):
+        category = (self.reading or self.spec).get("entity_category")
+        return EntityCategory(category) if category else None
+
+    @callback
+    def _handle_coordinator_update(self):
+        # Battery endpoint availability can change which reading belongs in Diagnostics.
+        if self.registry_entry and self.registry_entry.entity_category != self.entity_category:
+            entity_registry.async_get(self.hass).async_update_entity(
+                self.entity_id, entity_category=self.entity_category,
+            )
+        super()._handle_coordinator_update()
 
     @property
     def native_unit_of_measurement(self):
