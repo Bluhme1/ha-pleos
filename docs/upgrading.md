@@ -2,7 +2,15 @@
 
 [Back to setup guide](../README.md)
 
-Read the notes for each version you are crossing, including both sections below when upgrading from 0.6.0 or earlier. Restart Home Assistant after updating.
+Read the notes for each version you are crossing, including the native entity sections when upgrading from 0.6.0 or earlier. Restart Home Assistant after updating.
+
+## EV economy and upgrading to 0.9.0
+
+**Battery capacity** keeps its entity ID but now displays **kWh** with the `energy_storage` device class. Its previous unitless number was the API's kJ value: `256320` becomes `71.2 kWh`. Remove any existing template division by 3600 to avoid converting twice, and update numeric thresholds that used the raw number. Raw API diagnostics and archives remain unchanged. Existing recorded history/statistics are not rewritten; older unitless values should not be compared directly with the new kWh values. Capacity remains without a state class, so this change does not create consumption totals.
+
+**Estimated EV consumption** is a new sensor for pure EVs with suitable data. It defaults to mi/kWh for Home Assistant installations using miles, or kWh/100 km for metric distance. An explicit unit choice in the entity settings overrides the default. No dashboard or automation references are moved.
+
+The sensor appears after a usable matched report and starts unknown until at least 10 km and a 5-percentage-point battery drop have been observed. Charging and invalid data reset the observation window. See [estimated EV consumption](entities.md#estimated-ev-consumption) for requirements, reset rules and accuracy limits. No past economy is backfilled; this starts collecting after the update. Restart Home Assistant after installation.
 
 ## Native entities and upgrading to 0.8.0
 

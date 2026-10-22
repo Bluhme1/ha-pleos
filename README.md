@@ -13,6 +13,7 @@ This is a **read-only cloud integration for Europe**. It reads the data your car
 - Shows battery and charging status, fuel level, range and odometer readings.
 - Reports doors, ignition, climate settings, tyre pressures and warnings using native Home Assistant sensors and binary sensors.
 - Adds GPS tracking, trip summaries and driving statistics.
+- Estimates [EV consumption](docs/entities.md#estimated-ev-consumption) in kWh/100 km or mi/kWh from battery and odometer reports.
 - Shows when data was reported, so you can tell how recent it is.
 
 Available data varies by vehicle. Status is checked every **15 minutes** and trips every **60 minutes** by default; the car uploads on its own schedule, so these are not live readings.
@@ -50,7 +51,7 @@ For a ready-made dashboard with charging, range, doors, a map and trip graphs, f
 
 Readings may stay visible when old or temporarily unavailable from Pleos. Check their reporting time and `data_stale` attribute before using them in automations that need current data. [How data freshness works](docs/entities.md#data-freshness-and-retained-readings).
 
-**Updating an existing installation?** Read the [upgrade guide](docs/upgrading.md) for entity-ID and state changes in 0.7.0 and 0.8.0.
+**Updating an existing installation?** Read the [upgrade guide](docs/upgrading.md) for capacity-unit, entity-ID and state changes.
 
 ## Help and reference
 

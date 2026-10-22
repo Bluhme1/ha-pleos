@@ -45,12 +45,31 @@ Each account entry creates an **API device** (for example *Kia API* or *Kia 2 AP
 | Trip ignition, doors and low-fuel warning | Historical `power`, `door` and `problem` binary sensors |
 | Trip gear, belts, ISLA and light settings | Historical enums |
 | RPM, acceleration, steering angle and angular rates | Numeric sensors with their documented units; HA has no matching device class for these units |
-| Battery capacity | Plain numeric sensor: Pleos does not document its energy unit, so none is guessed |
+| Battery capacity | `energy_storage` sensor in kWh, converted from the API’s kJ value |
+| Estimated EV consumption | `energy_distance` measurement sensor; kWh/100 km or mi/kWh by default |
 | API connection/endpoint/archive status; reporting times | Diagnostic enums and timestamp sensors |
 | Vehicle information; data age | Diagnostic text/attributes and minutes |
 | Undocumented fields | Plain readings until their meaning and units are documented |
 
 These remain read-only entities. The API does not support operating locks, windows, heating or fans, so they are not exposed as controllable switches, covers, locks, fans or climate entities.
+
+## Estimated EV consumption
+
+Pure electric vehicles (`EV`) gain **Estimated EV consumption** once matching battery and odometer reports are available. No extra API calls or manual capacity setting are needed. Home Assistant defaults to **mi/kWh** when its distance unit is miles, otherwise **kWh/100 km**. The sensor’s settings can override this with **Wh/km**, **km/kWh**, **mi/kWh** or **kWh/100 km**; values convert along with the unit.
+
+The estimate uses the drop in battery percentage, reported battery capacity and distance travelled over an observation window:
+
+`kWh/100 km = battery capacity (kWh) × percentage-point drop ÷ distance (km)`
+
+For example, a 71.2 kWh battery dropping from 80% to 70% over 50 km gives **14.24 kWh/100 km**, or about **4.36 mi/kWh**. The existing **Battery capacity** sensor now converts the API value from kJ to kWh: a PV5 Passenger report of `256320` becomes `71.2 kWh`. This conversion is supported by that vehicle report; Pleos's [capacity field documentation](https://document.pleos.ai/en/api-reference/vehicle-data-api/vehicle-data-api/common/get-battery-charging-status) currently omits the unit. Raw diagnostics and archives retain the original number.
+
+To reduce percentage-rounding noise, consumption stays **unknown** until the window covers at least **10 km and a 5-percentage-point drop**. This is an average across observed reports, not an instantaneous or exact last-trip measurement. Its attributes include `window_started_at`, `reported_at`, `distance_km`, `energy_used_kwh`, `state_of_charge_drop`, `battery_capacity_kwh` and `estimated: true`.
+
+Only battery and odometer reports with the **same vehicle timestamp** are paired. The car must report disconnected, not charging, with valid capacity, battery level and odometer. New reports older than the configured stale-data threshold are excluded. Missing, mismatched or retained inputs make the sensor unavailable and clear its observation window; fresh matching reports start again. An unchanged parked report can keep the existing estimate, with the normal data-age attributes. Out-of-order reports are ignored. An initial account request failure follows the normal retained-data policy below.
+
+Charging/plug connection, V2L/V2X or unknown charging status clears the window. A battery-level increase, capacity change, odometer decrease or impossible jump, battery loss without distance, or a gap of more than 24 hours between matching reports starts a new window. The window survives normal restarts and is removed with its vehicle or integration entry. After a reset, allow another 10 km and 5-point drop before expecting a number.
+
+This remains an estimate: battery ageing and usable versus reported capacity, rounded percentages, heating while parked, and charging or V2L missed between reports can affect it. It does not measure charger energy, charging losses or regenerated energy. Fuel/hybrid economy is not calculated.
 
 ## Data freshness and retained readings
 

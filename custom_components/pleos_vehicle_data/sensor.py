@@ -32,6 +32,11 @@ class ReadingSensor(VehicleEntity, SensorEntity):
         self._attr_device_class = spec.get("device_class")
         self._attr_state_class = spec.get("state_class")
         self._attr_options = spec.get("options")
+        if spec.get("device_class") == "energy_distance":
+            self._attr_suggested_unit_of_measurement = (
+                "mi/kWh" if coordinator.hass.config.units.length_unit == "mi" else "kWh/100km"
+            )
+            self._attr_suggested_display_precision = 2
 
     @property
     def native_unit_of_measurement(self):

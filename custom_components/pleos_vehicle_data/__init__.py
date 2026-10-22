@@ -8,6 +8,7 @@ from pleos_client import PleosClient
 from .archive import archive_store
 from .const import DOMAIN
 from .coordinator import PleosCoordinator
+from .economy import economy_store
 from .ranges import range_store
 from .services import async_setup_services
 from .statistics import TripStatistics
@@ -39,10 +40,11 @@ async def async_unload_entry(hass, entry):
 
 
 async def async_remove_entry(hass, entry):
-    # Forget cached ranges and trip tracking. The archive files themselves are kept.
+    # Forget derived readings, cached ranges and trip tracking. The archive files themselves are kept.
     await trip_store(hass, entry.entry_id).async_remove()
     await window_store(hass, entry.entry_id).async_remove()
     await fired_store(hass, entry.entry_id).async_remove()
     await TripStatistics.async_clear(hass, entry.entry_id)
     await archive_store(hass, entry.entry_id).async_remove()
     await range_store(hass, entry.entry_id).async_remove()
+    await economy_store(hass, entry.entry_id).async_remove()
