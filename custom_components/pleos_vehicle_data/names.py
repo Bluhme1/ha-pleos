@@ -17,6 +17,7 @@ def _sensor_names():
     names["connection"] = "Connection"
     names["last_successful_poll"] = "Last successful poll"
     names["archive"] = "Archive"
+    names["estimated_ev_consumption"] = "Estimated EV consumption"
     names["vehicle_information"] = "Vehicle information"
     for endpoint in ENDPOINTS:
         names[identifier(endpoint) + "_api"] = ENDPOINT_NAMES[endpoint] + " API"

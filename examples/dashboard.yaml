@@ -143,6 +143,17 @@ views:
                 state_not: "unknown"
 
           - type: tile
+            entity: sensor.my_car_estimated_ev_consumption
+            name: Estimated EV consumption
+            visibility:
+              - condition: state
+                entity: sensor.my_car_estimated_ev_consumption
+                state_not: "unknown"
+              - condition: state
+                entity: sensor.my_car_estimated_ev_consumption
+                state_not: "unavailable"
+
+          - type: tile
             entity: binary_sensor.my_car_plugged_in
             name: Plug
             icon: mdi:ev-plug-ccs2

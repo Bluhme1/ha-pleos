@@ -36,8 +36,8 @@ class NativeParsingTests(unittest.TestCase):
                     "status_climatecontrol_temperature", "locations_location_latitude", "locations_location_longitude",
                     "powertrains_distancetoempties_ev"):
             self.assertNotIn("state_class", parsed[key], key)
-        self.assertNotIn("device_class", parsed["batteries_charge_batterycapacity"])
-        self.assertNotIn("unit_of_measurement", parsed["batteries_charge_batterycapacity"])
+        self.assertEqual(parsed["batteries_charge_batterycapacity"]["device_class"], "energy_storage")
+        self.assertEqual(parsed["batteries_charge_batterycapacity"]["unit_of_measurement"], "kWh")
         self.assertEqual(parsed["driving_odometer"]["state_class"], "total")
         self.assertEqual(parsed["locations_location_heading"]["state_class"], "measurement_angle")
         self.assertEqual(parsed["locations_location_type"]["entity_category"], "diagnostic")

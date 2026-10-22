@@ -15,6 +15,7 @@ from .archive import ResponseArchive
 from .const import BRANDS, DEFAULT_OPTIONS, ENDPOINTS, ENDPOINT_NAMES, SNAPSHOT_ENDPOINTS, TRIP_ENDPOINTS
 from .data import (Rejections, finite_number, identifier, location, new_trips, readings, reported_age, trip_readings,
                    trip_summary, vehicle_id)
+from .economy import EVEconomy
 from .ranges import RANGE_PREFIX, RangeCache
 from .statistics import TripStatistics
 from .trips import TripTracker
@@ -44,6 +45,7 @@ class PleosCoordinator(DataUpdateCoordinator):
         self.statistics = TripStatistics(hass, entry.entry_id)
         self.fetched_trips = []  # [(car_id, endpoint, data)] returned in the running poll.
         self.ranges = RangeCache(hass, entry.entry_id)
+        self.economy = EVEconomy(hass, entry.entry_id)
         self.last_successful_poll = None
         self.using_last_data = False
 
@@ -76,6 +78,7 @@ class PleosCoordinator(DataUpdateCoordinator):
                 ):
                     trip_cache[car_id] = car
             await self.ranges.apply(result["cars"])
+            await self.economy.apply(result["cars"], self.options["stale_minutes"])
             if self.options["trip_events"]:
                 # Announce only after every car was read, so a failed poll cannot mark trips as seen.
                 await self.trips.announce(self.brand, pending)

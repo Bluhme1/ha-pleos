@@ -4,7 +4,7 @@
 
 [kia_uvo](https://github.com/Hyundai-Kia-Connect/kia_uvo) (Kia Uvo / Hyundai Bluelink) uses [hyundai_kia_connect_api](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api) to talk to the manufacturers' phone-app backends. This integration uses the official Pleos Vehicle Data API. Both can run side by side, with separate devices and credentials.
 
-The Pleos column describes ha-pleos 0.8.0. The kia_uvo comparison was checked against kia_uvo 3.17.1 (library 4.35.2) on 14 October 2026, using its [documented entities](https://github.com/Hyundai-Kia-Connect/kia_uvo#supported-entities) and [trip sensors](https://github.com/Hyundai-Kia-Connect/kia_uvo/blob/master/custom_components/kia_uvo/sensor.py).
+The Pleos column describes ha-pleos 0.9.0. The kia_uvo comparison was checked against kia_uvo 3.17.1 (library 4.35.2) on 14 October 2026, using its [documented entities](https://github.com/Hyundai-Kia-Connect/kia_uvo#supported-entities) and [trip sensors](https://github.com/Hyundai-Kia-Connect/kia_uvo/blob/master/custom_components/kia_uvo/sensor.py).
 
 ## How they connect
 
@@ -59,3 +59,5 @@ The Pleos column describes ha-pleos 0.8.0. The kia_uvo comparison was checked ag
 | 360° camera images | ❌ | ✅ Hyundai |
 
 Availability depends on the vehicle, model year and region in both integrations. Marks describe the documented entities and trip attributes; either API may return additional fields.
+
+ha-pleos also provides [Estimated EV consumption](entities.md#estimated-ev-consumption) from battery percentage, capacity and odometer changes. This is a calculated estimate; Pleos does not report the consumed or regenerated energy totals listed above.

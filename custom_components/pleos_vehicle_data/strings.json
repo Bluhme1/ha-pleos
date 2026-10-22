@@ -554,6 +554,9 @@
       },
       "vehicle_information": {
         "name": "Vehicle information"
+      },
+      "estimated_ev_consumption": {
+        "name": "Estimated EV consumption"
       }
     },
     "binary_sensor": {

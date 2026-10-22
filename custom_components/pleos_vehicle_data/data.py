@@ -154,7 +154,7 @@ class Spec:
 
     low: float
     high: float
-    units: tuple | None = None  # Accepted raw units; None accepts any.
+    units: tuple | None = None  # Accepted raw units (including absent units); None accepts any.
     unit: str | None = None  # Fixed Home Assistant unit, replacing the raw one.
     device_class: str | None = None
     state_class: str | None = "measurement"
@@ -187,7 +187,7 @@ class Spec:
         """The rule a rejected value broke, for logs and diagnostics."""
         text = f"expected {self.low} to {self.high}"
         if self.units is not None:
-            text += " in " + "/".join(self.units)
+            text += " in " + "/".join(unit if unit is not None else "unspecified" for unit in self.units)
         return text + (" as a whole number" if self.integer else "")
 
     def metadata(self):
@@ -217,7 +217,8 @@ SNAPSHOT_FIELDS = (
     ("batteries", exact(("charge", "stateOfCharge")), PERCENT),
     ("powertrains", lambda path: len(path) == 3 and path[0] == "batteries" and path[-1] == "remainRatio", PERCENT),
     ("batteries", prefix("charge", "targetStateOfCharge"), Spec(0, 100, unit="%", state_class=None)),
-    ("batteries", exact(("charge", "batteryCapacity")), Spec(0, math.inf, state_class=None)),
+    ("batteries", exact(("charge", "batteryCapacity")), Spec(0, math.inf, units=(None, "kJ"), unit="kWh",
+        device_class="energy_storage", state_class=None, convert=lambda value, unit: value / 3600)),
     ("powertrains", exact(("engine", "fuelLevel")), Spec(0, 100, unit="%")),
     ("batteries", exact(("charge", "remainTime")), Spec(0, 65535, unit="min", device_class="duration", state_class=None)),
     ("powertrains", prefix("distanceToEmpties"), Spec(1, 4095, units=("feet", "km", "meter", "mile", "miles"),

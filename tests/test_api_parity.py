@@ -23,7 +23,7 @@ class ApiParityTests(unittest.TestCase):
                 "targetStateOfCharge": {"standard": 80, "quick": 90}, "remainTime": 10,
             }}, {
                 "charge_plugin": "ON", "charge_status": "v2l_operating", "charge_charging": "OFF",
-                "charge_stateofcharge": 40, "charge_batterycapacity": 100000,
+                "charge_stateofcharge": 40, "charge_batterycapacity": 100000 / 3600,
                 "charge_targetstateofcharge_standard": 80, "charge_targetstateofcharge_quick": 90,
                 "charge_remaintime": 10,
             }),
