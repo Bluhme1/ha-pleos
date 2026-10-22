@@ -10,6 +10,8 @@ Trip sensors keep their results between queries. New vehicles are queried immedi
 
 Full returned trips remain in the diagnostic sensor's `data` attribute. Individual trip sensors show the latest trip's final sample when valid, with trip start, duration and sample index.
 
+Missing final samples (`null`, the text `"null"`, or `"invalid"`) do not produce a reading or a rejected-value warning. Earlier samples are not substituted for a missing final state. The speed-limit-assist value `warning` is a setting, not an active vehicle fault; `none` is also a valid setting.
+
 Numeric trip sensors have `trip_min`, `trip_max`, `trip_mean`, `valid_samples` and `total_samples` attributes. Summaries use valid samples in the final sample's unit; the mean is per sample, not time-weighted. Home Assistant can convert the sensor state to your preferred unit without converting these attributes. Each endpoint reports its own latest trip, so its readings may refer to a different drive.
 
 **Trip distance (last trip)** is the difference between the first and last valid odometer samples of the latest driving trip. Its `odometer_start` and `odometer_end` attributes are in kilometres. An invalid final sample does not become a reading. Undocumented fields also get **(last trip)** readings, with numeric summaries where possible. Individual samples have no documented timestamps.
